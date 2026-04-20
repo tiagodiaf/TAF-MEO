@@ -23,7 +23,7 @@ O Tampermonkey abre automaticamente uma janela de confirmação — clica em **I
 2. Clica no botão **T** (flutuante, podes arrastar para onde quiseres)
 3. Clica em **⚙** → preenche a tua **Brigada** e **Nº Mecânico** → Guardar
 4. Caso a tarefa não exista é necessário adicionar a mesma no Gist de gestão de tarefas: 
-[nemesis-tarefas](https://gist.github.com/nemesis-tarefas)
+[nemesis-tarefas]([https://gist.github.com/nemesis-tarefas](https://gist.github.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6))
 
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
