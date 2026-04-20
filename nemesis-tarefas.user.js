@@ -21,15 +21,25 @@
 
   let tarefas = [];
 
-  function carregarTarefas(cb) {
+function carregarTarefas(cb) {
+    // Usamos apenas o GIST_URL porque ele já tem o Date.now() definido na constante
     GM_xmlhttpRequest({
       method: 'GET',
-      url: GIST_URL + '?t=' + Date.now(),
+      url: GIST_URL, 
       onload: function (r) {
-        try { cb(JSON.parse(r.responseText), null); }
-        catch (e) { cb([], 'Erro ao ler a lista de tarefas.'); }
+        try { 
+          const data = JSON.parse(r.responseText);
+          cb(data, null); 
+        }
+        catch (e) { 
+          console.error("Erro no JSON:", e);
+          cb([], 'Erro ao ler a lista de tarefas.'); 
+        }
       },
-      onerror: function () { cb([], 'Sem acesso à lista de tarefas.'); }
+      onerror: function (err) { 
+        console.error("Erro de rede:", err);
+        cb([], 'Sem acesso à lista de tarefas.'); 
+      }
     });
   }
 
