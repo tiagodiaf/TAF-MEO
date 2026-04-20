@@ -16,8 +16,7 @@
 (function () {
   'use strict';
 
-  const GIST_URL = 'https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json';
-
+  const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
   const ID_NUM_MECANO = 'wtWBAddTarefas_wtRecolha_Nmec';
 
   let tarefas = [];
