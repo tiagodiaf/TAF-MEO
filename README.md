@@ -14,7 +14,7 @@ O tampermonkey serve para instalares e usares os scripts abaixo
 ### 1. Tarefas Nemasis
 Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
-Clica aqui → **[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-tarefas.user.js)**
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-tarefas.user.js)**
 
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 
