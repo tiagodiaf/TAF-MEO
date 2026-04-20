@@ -1,24 +1,28 @@
-# Nemesis Tarefas
+# SCRIPTS MEO
 
-Script Tampermonkey para preenchimento rápido de tarefas no Nemesis.
 
-## Instalação
-
-### 1. Instalar o Tampermonkey
+## Instalação do Tampermonkey
 Clica no link correspondente ao teu browser:
 - [Chrome](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 - [Firefox](https://addons.mozilla.org/firefox/addon/tampermonkey/)
 - [Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 
-### 2. Instalar o script
+O tampermonkey serve para instalares e usares os scripts abaixo
+
+##Scripts
+
+### 1. Tarefas Nemasis
 Clica aqui → **[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-tarefas.user.js)**
 
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 
-### 3. Configurar os teus dados
+#### Configurar os teus dados
 1. Abre a página do Nemesis
 2. Clica no botão **T** (flutuante, podes arrastar para onde quiseres)
 3. Clica em **⚙** → preenche a tua **Brigada** e **Nº Mecânico** → Guardar
+4. Caso a tarefa não exista é necessário adicionar a mesma no Gist de gestão de tarefas: 
+[nemesis-tarefas](https://gist.github.com/nemesis-tarefas)
 
-## Atualizar as tarefas disponíveis
-As tarefas são carregadas automaticamente do ficheiro `nemesis-tarefas.json` — edita esse ficheiro no Gist e todos os colegas recebem as alterações na próxima utilização, sem reinstalar nada.
+## Notas
+Alguma dica ou alteração pdoes falar comigo.
+Bom trabalho
