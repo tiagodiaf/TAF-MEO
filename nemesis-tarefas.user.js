@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf
-// @version      1.0
+// @version      1.1
 // @description  Preenchimento rápido de tarefas no Nemesis
 // @author       tiagodiaf
 // @match        https://nemesis.telecom.pt/Nemesis_v5/Recolhas.Recolhas_List.aspx*
@@ -16,29 +16,19 @@
 
   const GIST_URL = 'https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json';
 
-  const TAREFAS_FALLBACK = [
-    { cod: 'P0127', desc: 'Atualizar cadastro' },
-    { cod: 'P0500', desc: 'Elaborar Projeto de Infraestruturas (Base)' },
-    { cod: 'P0510', desc: 'Elaborar Projeto de Infraestruturas (Variáveis)' },
-    { cod: 'P0130', desc: 'Análise de viabilidade c/ ou s/ traçado alternativo e sem deslocação ao terreno' },
-    { cod: 'P0136', desc: 'Esclarecimentos Diversos' },
-    { cod: 'P0701', desc: '' },
-    { cod: 'P0140', desc: '' }
-  ];
-
   const ID_NUM_MECANO = 'wtWBAddTarefas_wtRecolha_Nmec';
 
-  let tarefas = TAREFAS_FALLBACK;
+  let tarefas = [];
 
   function carregarTarefas(cb) {
     GM_xmlhttpRequest({
       method: 'GET',
       url: GIST_URL + '?t=' + Date.now(),
       onload: function (r) {
-        try { cb(JSON.parse(r.responseText)); }
-        catch (e) { cb(TAREFAS_FALLBACK); }
+        try { cb(JSON.parse(r.responseText), null); }
+        catch (e) { cb([], 'Erro ao ler a lista de tarefas.'); }
       },
-      onerror: function () { cb(TAREFAS_FALLBACK); }
+      onerror: function () { cb([], 'Sem acesso à lista de tarefas.'); }
     });
   }
 
@@ -121,7 +111,7 @@
     document.body.appendChild(panel);
   }
 
-  function abrirMenu() {
+  function abrirMenu(erro) {
     var ex = document.getElementById('nm-menu');
     if (ex) { ex.remove(); return; }
 
@@ -141,6 +131,7 @@
       fontFamily: 'Segoe UI,Arial,sans-serif'
     });
 
+    // Cabeçalho
     var hdr = document.createElement('div');
     Object.assign(hdr.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' });
     var tit = document.createElement('span');
@@ -162,29 +153,41 @@
     hdr.appendChild(acoes);
     menu.appendChild(hdr);
 
-    tarefas.forEach(function (t) {
-      var btn = document.createElement('button');
-      btn.innerHTML = '<span style="font-weight:bold;color:#0078d7">' + t.cod + '</span>' +
-        (t.desc ? ' &mdash; <span style="color:#333;font-size:12px">' + t.desc + '</span>' : '');
-      Object.assign(btn.style, {
-        padding: '7px 10px', cursor: 'pointer', backgroundColor: '#f0f7ff',
-        border: '1px solid #b3d4f5', borderRadius: '4px',
-        textAlign: 'left', fontSize: '12.5px', lineHeight: '1.5'
+    // Mensagem de erro OU lista de tarefas
+    if (erro) {
+      var msgErro = document.createElement('div');
+      msgErro.innerText = '⚠ ' + erro;
+      Object.assign(msgErro.style, {
+        padding: '10px', backgroundColor: '#fff3e0', border: '1px solid #ffb74d',
+        borderRadius: '4px', color: '#e65100', fontSize: '13px', textAlign: 'center'
       });
-      btn.onmouseover = function () {
-        this.style.backgroundColor = '#0078d7';
-        this.querySelectorAll('span').forEach(function (s) { s.style.color = '#fff'; });
-      };
-      btn.onmouseout = function () {
-        this.style.backgroundColor = '#f0f7ff';
-        var ss = this.querySelectorAll('span');
-        if (ss[0]) ss[0].style.color = '#0078d7';
-        if (ss[1]) ss[1].style.color = '#333';
-      };
-      btn.onclick = function () { menu.remove(); executar(t.cod); };
-      menu.appendChild(btn);
-    });
+      menu.appendChild(msgErro);
+    } else {
+      tarefas.forEach(function (t) {
+        var btn = document.createElement('button');
+        btn.innerHTML = '<span style="font-weight:bold;color:#0078d7">' + t.cod + '</span>' +
+          (t.desc ? ' &mdash; <span style="color:#333;font-size:12px">' + t.desc + '</span>' : '');
+        Object.assign(btn.style, {
+          padding: '7px 10px', cursor: 'pointer', backgroundColor: '#f0f7ff',
+          border: '1px solid #b3d4f5', borderRadius: '4px',
+          textAlign: 'left', fontSize: '12.5px', lineHeight: '1.5'
+        });
+        btn.onmouseover = function () {
+          this.style.backgroundColor = '#0078d7';
+          this.querySelectorAll('span').forEach(function (s) { s.style.color = '#fff'; });
+        };
+        btn.onmouseout = function () {
+          this.style.backgroundColor = '#f0f7ff';
+          var ss = this.querySelectorAll('span');
+          if (ss[0]) ss[0].style.color = '#0078d7';
+          if (ss[1]) ss[1].style.color = '#333';
+        };
+        btn.onclick = function () { menu.remove(); executar(t.cod); };
+        menu.appendChild(btn);
+      });
+    }
 
+    // Separador + input manual (sempre visível)
     var hr = document.createElement('hr');
     Object.assign(hr.style, { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' });
     menu.appendChild(hr);
@@ -326,9 +329,9 @@
           if (el) el.remove();
         });
       } else {
-        carregarTarefas(function (t) {
+        carregarTarefas(function (t, erro) {
           tarefas = t;
-          abrirMenu();
+          abrirMenu(erro);
         });
       }
     });
