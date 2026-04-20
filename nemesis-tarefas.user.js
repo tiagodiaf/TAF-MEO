@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
-// @namespace    https://github.com/tiagodiaf
+// @namespace    https://github.com/tiagodiaf/TAF-MEO/
 // @version      1.1
-// @description  Preenchimento rápido de tarefas no Nemesis
-// @author       tiagodiaf
+// @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
+// @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
+// @description  Preenchimento otimizado de tarefas no Nemesis
+// @author       Tiago Afonso
 // @match        https://nemesis.telecom.pt/Nemesis_v5/Recolhas.Recolhas_List.aspx*
 // @grant        GM_setValue
 // @grant        GM_getValue
