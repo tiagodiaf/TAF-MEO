@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.1
+// @version      1.2
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @description  Preenchimento otimizado de tarefas no Nemesis
