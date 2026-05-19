@@ -18,7 +18,7 @@ Para que o script funcione, deves configurar o browser e o Tampermonkey para per
 Consulta as instruções oficiais aqui: **[Tampermonkey FAQ - Q209](https://www.tampermonkey.net/faq.php?locale=en&q=Q209)**
 
 ## Scripts
-
+---
 ### 1. Tarefas Nemesis
 Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
@@ -33,8 +33,7 @@ O Tampermonkey abre automaticamente uma janela de confirmação — clica em **I
 4. Caso a tarefa não exista é necessário adicionar a mesma no Gist de gestão de tarefas: 
 [nemesis-tarefas](https://gist.github.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6)
 
-
-
+---
 ### 2. Manter sessão ativa no Nemesis e Smartdesk MEO e FastFiber
 Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
