@@ -36,7 +36,7 @@ O Tampermonkey abre automaticamente uma janela de confirmação — clica em **I
 ### 2. Manter sessão ativa no Nemesis e Smartdesk MEO e FastFiber
 Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
-**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/manter_sessao_ativa.js)**
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/manter_sessao_ativa.user.js)**
 
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 
