@@ -33,6 +33,13 @@ O Tampermonkey abre automaticamente uma janela de confirmação — clica em **I
 4. Caso a tarefa não exista é necessário adicionar a mesma no Gist de gestão de tarefas: 
 [nemesis-tarefas](https://gist.github.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6)
 
+### 2. Manter sessão ativa no Nemasis e Smartdesk MEO e FastFiber
+Automatiza o preenchimento das tarefas nas ordens de nemesis.
+
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/manter_sessao_ativa.js)**
+
+O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
+
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
 Bom trabalho
