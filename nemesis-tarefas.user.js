@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.3
+// @version      1.4
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @description  Preenchimento otimizado de tarefas no Nemesis
@@ -16,9 +16,15 @@
 (function () {
   'use strict';
 
-  const VERSAO_SCRIPT = "1.3";
+  const VERSAO_SCRIPT = "1.5";
   const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
-  const ID_NUM_MECANO = 'wtWBAddTarefas_wtRecolha_Nmec';
+  const ID_NUM_MECANO       = 'wtWBAddTarefas_wtRecolha_Nmec';
+  const ID_INPUT_TAREFA     = 'wtWBAddTarefas_wtInputTarefa';
+  const ID_QUANTIDADE       = 'wtWBAddTarefas_wtRecolha_Qtd';
+  const ID_BRIGADA          = 'wtWBAddTarefas_wtRecolha_Brigada';
+  const ID_DATA             = 'wtWBAddTarefas_wtRecolha_DataSP';
+  // ✅ ALTERAÇÃO 1: ID correto do botão "+"
+  const ID_BTN_ADICIONAR    = 'wtWBAddTarefas_wtimg_nova_tarefa';
 
   let tarefas = [];
 
@@ -27,18 +33,17 @@
       method: 'GET',
       url: GIST_URL,
       onload: function (r) {
-        try { 
+        try {
           const data = JSON.parse(r.responseText);
-          cb(data, null); 
-        }
-        catch (e) { 
+          cb(data, null);
+        } catch (e) {
           console.error("Erro no JSON:", e);
-          cb([], 'Erro ao ler a lista de tarefas.'); 
+          cb([], 'Erro ao ler a lista de tarefas.');
         }
       },
-      onerror: function (err) { 
+      onerror: function (err) {
         console.error("Erro de rede:", err);
-        cb([], 'Sem acesso à lista de tarefas.'); 
+        cb([], 'Sem acesso à lista de tarefas.');
       }
     });
   }
@@ -122,6 +127,7 @@
     document.body.appendChild(panel);
   }
 
+  // ── Menu principal com multi-seleção ──────────────────────────────────────
   function abrirMenu(erro) {
     var ex = document.getElementById('nm-menu');
     if (ex) { ex.remove(); return; }
@@ -138,14 +144,15 @@
       zIndex: '10002', backgroundColor: '#fff', border: '2px solid #0078d7',
       padding: '12px', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
       display: 'flex', flexDirection: 'column', gap: '6px',
-      minWidth: '360px', maxWidth: '500px',
+      minWidth: '400px', maxWidth: '520px',
       fontFamily: 'Segoe UI,Arial,sans-serif'
     });
 
+    // Cabeçalho
     var hdr = document.createElement('div');
     Object.assign(hdr.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' });
     var tit = document.createElement('span');
-    tit.innerText = 'Selecionar Tarefa';
+    tit.innerText = 'Selecionar Tarefas';
     Object.assign(tit.style, { fontWeight: 'bold', color: '#0078d7', fontSize: '14px' });
     var acoes = document.createElement('div');
     var btnCfg = document.createElement('button');
@@ -163,6 +170,12 @@
     hdr.appendChild(acoes);
     menu.appendChild(hdr);
 
+    // Área de scroll para as tarefas
+    var listaWrap = document.createElement('div');
+    Object.assign(listaWrap.style, {
+      maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px'
+    });
+
     if (erro) {
       var msgErro = document.createElement('div');
       msgErro.innerText = '⚠ ' + erro;
@@ -170,68 +183,203 @@
         padding: '10px', backgroundColor: '#fff3e0', border: '1px solid #ffb74d',
         borderRadius: '4px', color: '#e65100', fontSize: '13px', textAlign: 'center'
       });
-      menu.appendChild(msgErro);
+      listaWrap.appendChild(msgErro);
     } else {
       tarefas.forEach(function (t) {
-        var btn = document.createElement('button');
-        btn.innerHTML = '<span style="font-weight:bold;color:#0078d7">' + t.cod + '</span>' +
-          (t.desc ? ' &mdash; <span style="color:#333;font-size:12px">' + t.desc + '</span>' : '');
-        Object.assign(btn.style, {
-          padding: '7px 10px', cursor: 'pointer', backgroundColor: '#f0f7ff',
-          border: '1px solid #b3d4f5', borderRadius: '4px',
-          textAlign: 'left', fontSize: '12.5px', lineHeight: '1.5'
-        });
-        btn.onmouseover = function () {
-          this.style.backgroundColor = '#0078d7';
-          this.querySelectorAll('span').forEach(function (s) { s.style.color = '#fff'; });
-        };
-        btn.onmouseout = function () {
-          this.style.backgroundColor = '#f0f7ff';
-          var ss = this.querySelectorAll('span');
-          if (ss[0]) ss[0].style.color = '#0078d7';
-          if (ss[1]) ss[1].style.color = '#333';
-        };
-        btn.onclick = function () { menu.remove(); executar(t.cod); };
-        menu.appendChild(btn);
+        var row = criarLinhaMultiSelect(t);
+        listaWrap.appendChild(row);
       });
     }
+    menu.appendChild(listaWrap);
 
     var hr = document.createElement('hr');
     Object.assign(hr.style, { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' });
     menu.appendChild(hr);
 
-    var row = document.createElement('div');
-    Object.assign(row.style, { display: 'flex', gap: '6px', alignItems: 'center' });
-    var inp = document.createElement('input');
-    inp.type = 'text';
-    inp.placeholder = 'Código manual (ex: P0999)';
-    Object.assign(inp.style, {
-      flex: '1', padding: '6px 8px', border: '1px solid #b3d4f5', borderRadius: '4px', fontSize: '13px'
+    // Linha manual
+    var rowManual = document.createElement('div');
+    Object.assign(rowManual.style, { display: 'flex', gap: '6px', alignItems: 'center' });
+    var inpCod = document.createElement('input');
+    inpCod.type = 'text';
+    inpCod.placeholder = 'Código manual (ex: P0999)';
+    Object.assign(inpCod.style, {
+      flex: '1', padding: '6px 8px', border: '1px solid #b3d4f5',
+      borderRadius: '4px', fontSize: '13px'
     });
-    inp.onkeydown = function (e) {
-      if (e.key === 'Enter' && this.value.trim()) { menu.remove(); executar(this.value.trim()); }
-    };
+    var inpQtdManual = document.createElement('input');
+    inpQtdManual.type = 'number';
+    inpQtdManual.value = '1';
+    inpQtdManual.min = '1';
+    inpQtdManual.title = 'Quantidade';
+    Object.assign(inpQtdManual.style, {
+      width: '52px', padding: '6px 4px', border: '1px solid #b3d4f5',
+      borderRadius: '4px', fontSize: '13px', textAlign: 'center'
+    });
     var btnOk = document.createElement('button');
     btnOk.innerText = '▶';
     Object.assign(btnOk.style, {
       padding: '6px 14px', cursor: 'pointer', backgroundColor: '#0078d7',
       color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold'
     });
-    btnOk.onclick = function () { if (inp.value.trim()) { menu.remove(); executar(inp.value.trim()); } };
-    row.appendChild(inp);
-    row.appendChild(btnOk);
-    menu.appendChild(row);
+    btnOk.onclick = function () {
+      if (inpCod.value.trim()) {
+        menu.remove();
+        executarSequencia([{ cod: inpCod.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
+      }
+    };
+    inpCod.onkeydown = function (e) {
+      if (e.key === 'Enter' && this.value.trim()) {
+        menu.remove();
+        executarSequencia([{ cod: this.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
+      }
+    };
+    rowManual.appendChild(inpCod);
+    rowManual.appendChild(inpQtdManual);
+    rowManual.appendChild(btnOk);
+    menu.appendChild(rowManual);
 
-    // Texto da versão no fundo
+    // Botão "Executar selecionadas"
+    var btnExecutar = document.createElement('button');
+    btnExecutar.id = 'nm-btn-executar';
+    btnExecutar.innerText = 'Executar tarefas selecionadas';
+    Object.assign(btnExecutar.style, {
+      padding: '8px', cursor: 'pointer', backgroundColor: '#e0e0e0',
+      color: '#999', border: 'none', borderRadius: '4px',
+      fontWeight: 'bold', fontSize: '13px', marginTop: '2px'
+    });
+    btnExecutar.disabled = true;
+    btnExecutar.onclick = function () {
+      var selecionadas = recolherSelecionadas();
+      if (!selecionadas.length) return;
+      menu.remove();
+      executarSequencia(selecionadas);
+    };
+    menu.appendChild(btnExecutar);
+
+    // Versão
     var vText = document.createElement('div');
     vText.innerText = 'v' + VERSAO_SCRIPT;
-    Object.assign(vText.style, {
-      fontSize: '9px', color: '#bbb', textAlign: 'right', marginTop: '4px'
-    });
+    Object.assign(vText.style, { fontSize: '9px', color: '#bbb', textAlign: 'right', marginTop: '2px' });
     menu.appendChild(vText);
 
     document.body.appendChild(menu);
-    inp.focus();
+    inpCod.focus();
+
+    // Actualizar estado do botão executar
+    function atualizarBtnExecutar() {
+      var selecionadas = recolherSelecionadas();
+      var n = selecionadas.length;
+      if (n > 0) {
+        btnExecutar.disabled = false;
+        btnExecutar.innerText = 'Executar ' + n + ' tarefa' + (n > 1 ? 's' : '') + ' selecionada' + (n > 1 ? 's' : '');
+        Object.assign(btnExecutar.style, { backgroundColor: '#0078d7', color: '#fff' });
+      } else {
+        btnExecutar.disabled = true;
+        btnExecutar.innerText = 'Executar tarefas selecionadas';
+        Object.assign(btnExecutar.style, { backgroundColor: '#e0e0e0', color: '#999' });
+      }
+    }
+
+    // Expor função para as linhas chamarem
+    menu._atualizarBtnExecutar = atualizarBtnExecutar;
+  }
+
+  // Cria uma linha de tarefa com checkbox + campo de quantidade (oculto até selecionar)
+  function criarLinhaMultiSelect(t) {
+    var row = document.createElement('div');
+    Object.assign(row.style, {
+      display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '6px 8px', borderRadius: '4px',
+      border: '1px solid #e0e0e0', backgroundColor: '#fafafa',
+      cursor: 'pointer', transition: 'background 0.15s'
+    });
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.cod = t.cod;
+    Object.assign(cb.style, { cursor: 'pointer', flexShrink: '0', width: '15px', height: '15px' });
+
+    var label = document.createElement('span');
+    label.innerHTML = '<span style="font-weight:bold;color:#0078d7">' + t.cod + '</span>' +
+      (t.desc ? ' <span style="color:#555;font-size:12px">— ' + t.desc + '</span>' : '');
+    Object.assign(label.style, { flex: '1', fontSize: '12.5px', lineHeight: '1.4', cursor: 'pointer' });
+
+    // Campo quantidade — só aparece quando selecionado
+    var qtdWrap = document.createElement('div');
+    Object.assign(qtdWrap.style, { display: 'none', alignItems: 'center', gap: '3px', flexShrink: '0' });
+    var qtdLabel = document.createElement('span');
+    qtdLabel.innerText = 'Qtd:';
+    Object.assign(qtdLabel.style, { fontSize: '11px', color: '#777' });
+    var qtdInp = document.createElement('input');
+    qtdInp.type = 'number';
+    qtdInp.value = '1';
+    qtdInp.min = '1';
+    qtdInp.dataset.qtd = 'true';
+    Object.assign(qtdInp.style, {
+      width: '48px', padding: '3px 4px', border: '1px solid #b3d4f5',
+      borderRadius: '4px', fontSize: '12px', textAlign: 'center'
+    });
+    qtdInp.onclick = function (e) { e.stopPropagation(); };
+    qtdWrap.appendChild(qtdLabel);
+    qtdWrap.appendChild(qtdInp);
+
+    function toggleSelecao(selecionado) {
+      cb.checked = selecionado;
+      if (selecionado) {
+        Object.assign(row.style, { backgroundColor: '#e8f4ff', border: '1px solid #0078d7' });
+        qtdWrap.style.display = 'flex';
+        qtdInp.focus();
+        qtdInp.select();
+      } else {
+        Object.assign(row.style, { backgroundColor: '#fafafa', border: '1px solid #e0e0e0' });
+        qtdWrap.style.display = 'none';
+        qtdInp.value = '1';
+      }
+      var menu = document.getElementById('nm-menu');
+      if (menu && menu._atualizarBtnExecutar) menu._atualizarBtnExecutar();
+    }
+
+    row.onclick = function () { toggleSelecao(!cb.checked); };
+    cb.onclick = function (e) { e.stopPropagation(); toggleSelecao(cb.checked); };
+
+    row.appendChild(cb);
+    row.appendChild(label);
+    row.appendChild(qtdWrap);
+    return row;
+  }
+
+  // Recolhe as tarefas selecionadas com as suas quantidades
+  function recolherSelecionadas() {
+    var menu = document.getElementById('nm-menu');
+    if (!menu) return [];
+    var resultado = [];
+    menu.querySelectorAll('input[type="checkbox"][data-cod]').forEach(function (cb) {
+      if (cb.checked) {
+        var wrap = cb.closest('div');
+        var qtdInp = wrap ? wrap.querySelector('input[data-qtd]') : null;
+        var qty = qtdInp ? (parseInt(qtdInp.value, 10) || 1) : 1;
+        resultado.push({ cod: cb.dataset.cod, qty: qty });
+      }
+    });
+    return resultado;
+  }
+
+  // ── Execução sequencial ───────────────────────────────────────────────────
+  function executarSequencia(lista) {
+    if (!lista.length) return;
+    var index = 0;
+
+    function proxima() {
+      if (index >= lista.length) {
+        showToast('✓ ' + lista.length + ' tarefa(s) adicionada(s)', false);
+        return;
+      }
+      var item = lista[index++];
+      executarUma(item.cod, item.qty, function () {
+        setTimeout(proxima, 600);
+      });
+    }
+    proxima();
   }
 
   function formularioJaAberto() {
@@ -239,43 +387,90 @@
     return f && f.offsetParent !== null;
   }
 
-  function executar(cod) {
+  function executarUma(cod, qty, callback) {
     if (!formularioJaAberto()) {
       var img = document.querySelector('img[src*="recolha_tarefas_seleccao_branco.png"]');
       if (img) img.click();
+      setTimeout(function () { preencherEAdicionar(cod, qty, callback); }, 800);
+    } else {
+      preencherEAdicionar(cod, qty, callback);
     }
-    setTimeout(function () { preencherFormulario(cod); }, 800);
   }
 
-  function preencherFormulario(valor) {
+  function setNativeValue(el, value) {
+    // Compatibilidade com frameworks que interceptam o setter
+    var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    if (nativeSetter && nativeSetter.set) {
+      nativeSetter.set.call(el, value);
+    } else {
+      el.value = value;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // ✅ ALTERAÇÃO 2: aguarda o campo ficar vazio antes de chamar o callback
+  function aguardarTarefaGravada(callback) {
+    var inputTarefa = document.getElementById(ID_INPUT_TAREFA);
+    if (!inputTarefa) { callback(); return; }
+    var elapsed = 0;
+    var poll = setInterval(function () {
+      elapsed += 150;
+      if (inputTarefa.value.trim() === '') {
+        clearInterval(poll);
+        callback();
+      } else if (elapsed >= 4000) {
+        clearInterval(poll);
+        callback();
+      }
+    }, 150);
+  }
+
+  function preencherEAdicionar(cod, qty, callback) {
     var inputTarefa = document.getElementById('wtWBAddTarefas_wtInputTarefa');
-    if (!inputTarefa) { showToast('Erro: campo Tarefa não encontrado', true); return; }
+    if (!inputTarefa) { showToast('Erro: campo Tarefa não encontrado', true); if (callback) callback(); return; }
 
     inputTarefa.focus();
-    inputTarefa.value = valor;
-    inputTarefa.dispatchEvent(new Event('input', { bubbles: true }));
-    inputTarefa.dispatchEvent(new Event('change', { bubbles: true }));
+    setNativeValue(inputTarefa, cod);
 
     setTimeout(function () {
       var brigada = GM_getValue('brigada', '');
       var numMecano = GM_getValue('numMecano', '');
 
       var b = document.getElementById('wtWBAddTarefas_wtRecolha_Brigada');
-      if (b && brigada) b.value = brigada;
+      if (b && brigada) setNativeValue(b, brigada);
 
       var m = document.getElementById(ID_NUM_MECANO);
-      if (m && numMecano) m.value = numMecano;
+      if (m && numMecano) setNativeValue(m, numMecano);
 
       var d = document.getElementById('wtWBAddTarefas_wtRecolha_DataSP');
-      if (d) d.value = new Date().toISOString().split('T')[0];
+      if (d) setNativeValue(d, new Date().toISOString().split('T')[0]);
 
-      var imgF = document.querySelector('img[src*="recolha_tarefas_seleccao_branco.png"]');
-      if (imgF) imgF.click();
+      // Preencher quantidade
+      var qtdField = document.getElementById(ID_QUANTIDADE);
+      if (qtdField) {
+        setNativeValue(qtdField, String(qty));
+      }
 
-      showToast('✓ Tarefa ' + valor + ' preenchida', false);
-    }, 1000);
+      // Clicar no botão "+" para adicionar a tarefa
+      setTimeout(function () {
+        var btnAdicionar = document.getElementById(ID_BTN_ADICIONAR);
+        if (btnAdicionar) {
+          btnAdicionar.click();
+        } else {
+          // Fallback: botão antigo
+          var imgF = document.querySelector('img[src*="recolha_tarefas_seleccao_branco.png"]');
+          if (imgF) imgF.click();
+        }
+        // ✅ ALTERAÇÃO 3: aguardar confirmação real em vez de chamar callback imediatamente
+        aguardarTarefaGravada(function () {
+          if (callback) callback();
+        });
+      }, 400);
+    }, 600);
   }
 
+  // ── FAB ───────────────────────────────────────────────────────────────────
   function criarFAB() {
     var fab = document.createElement('div');
     fab.id = 'nm-fab';
