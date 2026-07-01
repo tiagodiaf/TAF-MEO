@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.4
+// @version      1.6
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @description  Preenchimento otimizado de tarefas no Nemesis
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const VERSAO_SCRIPT = "1.5";
+  const VERSAO_SCRIPT = "1.6";
   const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
   const ID_NUM_MECANO       = 'wtWBAddTarefas_wtRecolha_Nmec';
   const ID_INPUT_TAREFA     = 'wtWBAddTarefas_wtInputTarefa';
@@ -218,7 +218,7 @@
     var btnOk = document.createElement('button');
     btnOk.innerText = '▶';
     Object.assign(btnOk.style, {
-      padding: '6px 14px', cursor: 'pointer', backgroundColor: '#0078d7',
+      padding: '6px 14px', cursor: 'pointer', backgroundColor: '#546e7a',
       color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold'
     });
     btnOk.onclick = function () {
@@ -237,6 +237,43 @@
     rowManual.appendChild(inpQtdManual);
     rowManual.appendChild(btnOk);
     menu.appendChild(rowManual);
+
+    // Linha de data — checkbox "usar data de hoje" + input de data (valores reutilizados entre execuções)
+    var rowData = document.createElement('div');
+    Object.assign(rowData.style, { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' });
+
+    var cbHoje = document.createElement('input');
+    cbHoje.type = 'checkbox';
+    cbHoje.id = 'nm-cb-hoje';
+    cbHoje.checked = GM_getValue('usarDataHoje', true);
+    Object.assign(cbHoje.style, { cursor: 'pointer', flexShrink: '0', width: '15px', height: '15px' });
+
+    var lblHoje = document.createElement('label');
+    lblHoje.innerText = 'Usar data de hoje';
+    lblHoje.htmlFor = 'nm-cb-hoje';
+    Object.assign(lblHoje.style, { fontSize: '12px', color: '#555', cursor: 'pointer' });
+
+    var inpData = document.createElement('input');
+    inpData.type = 'date';
+    inpData.value = GM_getValue('dataEscolhida', new Date().toISOString().split('T')[0]);
+    Object.assign(inpData.style, {
+      padding: '5px 6px', border: '1px solid #b3d4f5', borderRadius: '4px',
+      fontSize: '12px', marginLeft: 'auto',
+      display: cbHoje.checked ? 'none' : 'block'
+    });
+
+    cbHoje.onchange = function () {
+      GM_setValue('usarDataHoje', cbHoje.checked);
+      inpData.style.display = cbHoje.checked ? 'none' : 'block';
+    };
+    inpData.onchange = function () {
+      GM_setValue('dataEscolhida', inpData.value);
+    };
+
+    rowData.appendChild(cbHoje);
+    rowData.appendChild(lblHoje);
+    rowData.appendChild(inpData);
+    menu.appendChild(rowData);
 
     // Botão "Executar selecionadas"
     var btnExecutar = document.createElement('button');
@@ -443,8 +480,13 @@
       var m = document.getElementById(ID_NUM_MECANO);
       if (m && numMecano) setNativeValue(m, numMecano);
 
+      var usarDataHoje = GM_getValue('usarDataHoje', true);
+      var dataParaUsar = usarDataHoje
+        ? new Date().toISOString().split('T')[0]
+        : GM_getValue('dataEscolhida', new Date().toISOString().split('T')[0]);
+
       var d = document.getElementById('wtWBAddTarefas_wtRecolha_DataSP');
-      if (d) setNativeValue(d, new Date().toISOString().split('T')[0]);
+      if (d) setNativeValue(d, dataParaUsar);
 
       // Preencher quantidade
       var qtdField = document.getElementById(ID_QUANTIDADE);
