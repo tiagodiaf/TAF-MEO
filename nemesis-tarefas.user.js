@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.6
+// @version      1.7
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @description  Preenchimento otimizado de tarefas no Nemesis
@@ -16,17 +16,46 @@
 (function () {
   'use strict';
 
-  const VERSAO_SCRIPT = "1.6";
+  const VERSAO_SCRIPT = "1.7";
   const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
   const ID_NUM_MECANO       = 'wtWBAddTarefas_wtRecolha_Nmec';
   const ID_INPUT_TAREFA     = 'wtWBAddTarefas_wtInputTarefa';
   const ID_QUANTIDADE       = 'wtWBAddTarefas_wtRecolha_Qtd';
   const ID_BRIGADA          = 'wtWBAddTarefas_wtRecolha_Brigada';
   const ID_DATA             = 'wtWBAddTarefas_wtRecolha_DataSP';
-  // ✅ ALTERAÇÃO 1: ID correto do botão "+"
   const ID_BTN_ADICIONAR    = 'wtWBAddTarefas_wtimg_nova_tarefa';
 
+  // ── Tempos ajustáveis (ms) ─────────────────────────────────────────────
+  // ✅ OTIMIZAÇÃO: onde antes havia setTimeout fixos, passa a usar polling
+  // (waitFor) que avança assim que a condição é verdadeira, em vez de
+  // esperar sempre o tempo máximo. Os valores de "timeout" abaixo são o
+  // limite de segurança, não o tempo real de espera normal.
+  const T_ESPERA_ABRIR_FORM     = { interval: 80,  timeout: 2500 }; // form a abrir
+  const T_ESPERA_APOS_CODIGO    = 350;  // antes: 600ms fixo
+  const T_ESPERA_ANTES_CLICAR   = 220;  // antes: 400ms fixo
+  const T_POLL_CONFIRMACAO      = { interval: 100, timeout: 3000 }; // antes: 150/4000
+  const T_ENTRE_TAREFAS         = 250;  // antes: 600ms fixo
+
   let tarefas = [];
+  let fabEl = null;
+
+  // ── Helper genérico de polling ────────────────────────────────────────
+  function waitFor(conditionFn, callback, opts) {
+    var interval = (opts && opts.interval) || 100;
+    var timeout = (opts && opts.timeout) || 3000;
+    if (conditionFn()) { callback(true); return; }
+    var elapsed = 0;
+    var poll = setInterval(function () {
+      elapsed += interval;
+      if (conditionFn()) {
+        clearInterval(poll);
+        callback(true);
+      } else if (elapsed >= timeout) {
+        clearInterval(poll);
+        callback(false);
+      }
+    }, interval);
+  }
 
   function carregarTarefas(cb) {
     GM_xmlhttpRequest({
@@ -62,6 +91,49 @@
     document.body.appendChild(t);
     setTimeout(function () { t.style.opacity = '0'; }, 1800);
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 2400);
+  }
+
+  // ── Estados visuais do ícone T (substitui os toasts de sucesso) ────────
+  function injetarEstilos() {
+    if (document.getElementById('nm-style')) return;
+    var s = document.createElement('style');
+    s.id = 'nm-style';
+    s.textContent =
+      '@keyframes nm-pulse {' +
+      '  0%, 100% { outline-color: rgba(255,193,7,1); }' +
+      '  50% { outline-color: rgba(255,193,7,0.25); }' +
+      '}' +
+      '#nm-fab.nm-running {' +
+      '  outline: 3px solid #ffc107;' +
+      '  outline-offset: 3px;' +
+      '  animation: nm-pulse 0.9s ease-in-out infinite;' +
+      '}' +
+      '#nm-fab.nm-success {' +
+      '  outline: 3px solid #2e7d32;' +
+      '  outline-offset: 3px;' +
+      '  animation: none;' +
+      '}';
+    document.head.appendChild(s);
+  }
+
+  function fabRunning() {
+    if (!fabEl) return;
+    fabEl.classList.remove('nm-success');
+    fabEl.classList.add('nm-running');
+  }
+
+  function fabSuccess() {
+    if (!fabEl) return;
+    fabEl.classList.remove('nm-running');
+    fabEl.classList.add('nm-success');
+    setTimeout(function () {
+      if (fabEl) fabEl.classList.remove('nm-success');
+    }, 2200);
+  }
+
+  function fabIdle() {
+    if (!fabEl) return;
+    fabEl.classList.remove('nm-running', 'nm-success');
   }
 
   function abrirDefinicoes() {
@@ -406,21 +478,23 @@
     if (!lista.length) return;
     var index = 0;
 
+    fabRunning(); // ✅ borda amarela intermitente enquanto processa
+
     function proxima() {
       if (index >= lista.length) {
-        showToast('✓ ' + lista.length + ' tarefa(s) adicionada(s)', false);
+        fabSuccess(); // ✅ borda verde fixa alguns segundos, sem toast
         return;
       }
       var item = lista[index++];
       executarUma(item.cod, item.qty, function () {
-        setTimeout(proxima, 600);
+        setTimeout(proxima, T_ENTRE_TAREFAS);
       });
     }
     proxima();
   }
 
   function formularioJaAberto() {
-    var f = document.getElementById('wtWBAddTarefas_wtInputTarefa');
+    var f = document.getElementById(ID_INPUT_TAREFA);
     return f && f.offsetParent !== null;
   }
 
@@ -428,7 +502,11 @@
     if (!formularioJaAberto()) {
       var img = document.querySelector('img[src*="recolha_tarefas_seleccao_branco.png"]');
       if (img) img.click();
-      setTimeout(function () { preencherEAdicionar(cod, qty, callback); }, 800);
+      // ✅ OTIMIZAÇÃO: em vez de esperar sempre 800ms fixos, avança assim
+      // que o formulário estiver visível (normalmente é bem mais rápido)
+      waitFor(formularioJaAberto, function () {
+        preencherEAdicionar(cod, qty, callback);
+      }, T_ESPERA_ABRIR_FORM);
     } else {
       preencherEAdicionar(cod, qty, callback);
     }
@@ -446,26 +524,24 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // ✅ ALTERAÇÃO 2: aguarda o campo ficar vazio antes de chamar o callback
   function aguardarTarefaGravada(callback) {
     var inputTarefa = document.getElementById(ID_INPUT_TAREFA);
     if (!inputTarefa) { callback(); return; }
-    var elapsed = 0;
-    var poll = setInterval(function () {
-      elapsed += 150;
-      if (inputTarefa.value.trim() === '') {
-        clearInterval(poll);
-        callback();
-      } else if (elapsed >= 4000) {
-        clearInterval(poll);
-        callback();
-      }
-    }, 150);
+    waitFor(function () {
+      return inputTarefa.value.trim() === '';
+    }, function () {
+      callback();
+    }, T_POLL_CONFIRMACAO);
   }
 
   function preencherEAdicionar(cod, qty, callback) {
-    var inputTarefa = document.getElementById('wtWBAddTarefas_wtInputTarefa');
-    if (!inputTarefa) { showToast('Erro: campo Tarefa não encontrado', true); if (callback) callback(); return; }
+    var inputTarefa = document.getElementById(ID_INPUT_TAREFA);
+    if (!inputTarefa) {
+      showToast('Erro: campo Tarefa não encontrado', true);
+      fabIdle();
+      if (callback) callback();
+      return;
+    }
 
     inputTarefa.focus();
     setNativeValue(inputTarefa, cod);
@@ -474,7 +550,7 @@
       var brigada = GM_getValue('brigada', '');
       var numMecano = GM_getValue('numMecano', '');
 
-      var b = document.getElementById('wtWBAddTarefas_wtRecolha_Brigada');
+      var b = document.getElementById(ID_BRIGADA);
       if (b && brigada) setNativeValue(b, brigada);
 
       var m = document.getElementById(ID_NUM_MECANO);
@@ -485,7 +561,7 @@
         ? new Date().toISOString().split('T')[0]
         : GM_getValue('dataEscolhida', new Date().toISOString().split('T')[0]);
 
-      var d = document.getElementById('wtWBAddTarefas_wtRecolha_DataSP');
+      var d = document.getElementById(ID_DATA);
       if (d) setNativeValue(d, dataParaUsar);
 
       // Preencher quantidade
@@ -504,18 +580,20 @@
           var imgF = document.querySelector('img[src*="recolha_tarefas_seleccao_branco.png"]');
           if (imgF) imgF.click();
         }
-        // ✅ ALTERAÇÃO 3: aguardar confirmação real em vez de chamar callback imediatamente
         aguardarTarefaGravada(function () {
           if (callback) callback();
         });
-      }, 400);
-    }, 600);
+      }, T_ESPERA_ANTES_CLICAR);
+    }, T_ESPERA_APOS_CODIGO);
   }
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   function criarFAB() {
+    injetarEstilos();
+
     var fab = document.createElement('div');
     fab.id = 'nm-fab';
+    fabEl = fab;
 
     var savedLeft = GM_getValue('fabLeft', null);
     var savedTop = GM_getValue('fabTop', null);
