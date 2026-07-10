@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.7
+// @version      1.8
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @description  Preenchimento otimizado de tarefas no Nemesis
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const VERSAO_SCRIPT = "1.7";
+  const VERSAO_SCRIPT = "1.8";
   const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
   const ID_NUM_MECANO       = 'wtWBAddTarefas_wtRecolha_Nmec';
   const ID_INPUT_TAREFA     = 'wtWBAddTarefas_wtInputTarefa';
@@ -38,6 +38,22 @@
 
   let tarefas = [];
   let fabEl = null;
+  const CACHE_KEY = 'tarefasCache';
+
+  // ── Helpers de estilo (evita repetir os mesmos objetos por todo o lado) ──
+  function estiloInputTexto(overrides) {
+    return Object.assign({
+      padding: '6px 8px', border: '1px solid #b3d4f5',
+      borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box'
+    }, overrides || {});
+  }
+
+  function estiloBotao(bg, cor, overrides) {
+    return Object.assign({
+      padding: '8px', cursor: 'pointer', backgroundColor: bg, color: cor,
+      border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px'
+    }, overrides || {});
+  }
 
   // ── Helper genérico de polling ────────────────────────────────────────
   function waitFor(conditionFn, callback, opts) {
@@ -64,6 +80,7 @@
       onload: function (r) {
         try {
           const data = JSON.parse(r.responseText);
+          GM_setValue(CACHE_KEY, JSON.stringify(data)); // ✅ atualiza cache local
           cb(data, null);
         } catch (e) {
           console.error("Erro no JSON:", e);
@@ -170,10 +187,7 @@
       inp.value = GM_getValue(key, '');
       inp.placeholder = placeholder;
       inp.dataset.key = key;
-      Object.assign(inp.style, {
-        width: '100%', padding: '6px 8px', border: '1px solid #ccc',
-        borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box'
-      });
+      Object.assign(inp.style, estiloInputTexto({ width: '100%', border: '1px solid #ccc' }));
       wrap.appendChild(lbl);
       wrap.appendChild(inp);
       panel.appendChild(wrap);
@@ -184,10 +198,7 @@
 
     var btnGuardar = document.createElement('button');
     btnGuardar.innerText = '💾 Guardar';
-    Object.assign(btnGuardar.style, {
-      width: '100%', padding: '8px', backgroundColor: '#555', color: '#fff',
-      border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
-    });
+    Object.assign(btnGuardar.style, estiloBotao('#555', '#fff', { width: '100%' }));
     btnGuardar.onclick = function () {
       panel.querySelectorAll('input[data-key]').forEach(function (inp) {
         GM_setValue(inp.dataset.key, inp.value.trim());
@@ -211,12 +222,14 @@
     var rect = fab.getBoundingClientRect();
     Object.assign(menu.style, {
       position: 'fixed',
-      top: rect.top + 'px',
+      top: '50%',
       left: (rect.right + 10) + 'px',
+      transform: 'translateY(-50%)',
       zIndex: '10002', backgroundColor: '#fff', border: '2px solid #0078d7',
       padding: '12px', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
       display: 'flex', flexDirection: 'column', gap: '6px',
       minWidth: '400px', maxWidth: '520px',
+      maxHeight: '85vh', overflowY: 'auto',
       fontFamily: 'Segoe UI,Arial,sans-serif'
     });
 
@@ -242,31 +255,75 @@
     hdr.appendChild(acoes);
     menu.appendChild(hdr);
 
+    // ✅ Repetir última sequência — mostra sempre um ecrã de confirmação antes de correr
+    var ultimaSeqBruta = GM_getValue('ultimaSequencia', null);
+    if (ultimaSeqBruta) {
+      try {
+        var ultimaSeq = JSON.parse(ultimaSeqBruta);
+        if (ultimaSeq && ultimaSeq.length) {
+          var btnRepetir = document.createElement('button');
+          btnRepetir.innerText = '🔁 Repetir última sequência (' + ultimaSeq.length + ')';
+          Object.assign(btnRepetir.style, estiloBotao('#eceff1', '#455a64', { marginBottom: '6px', fontSize: '12px' }));
+          btnRepetir.onclick = function () {
+            var exMenu = document.getElementById('nm-menu');
+            if (exMenu) exMenu.remove();
+            mostrarConfirmacaoExecucao(ultimaSeq);
+          };
+          menu.appendChild(btnRepetir);
+        }
+      } catch (e) { /* ignora cache inválida */ }
+    }
+
+    // ── Barra de tabs: Tarefas / Combos ───────────────────────────────────
+    var tabBar = document.createElement('div');
+    Object.assign(tabBar.style, { display: 'flex', gap: '4px', marginBottom: '6px' });
+
+    var btnTabTarefas = document.createElement('button');
+    btnTabTarefas.innerText = '📋 Tarefas';
+    var btnTabCombos = document.createElement('button');
+    btnTabCombos.innerText = '⭐ Combos';
+
+    var abaTarefas = document.createElement('div');
+    var abaCombos = document.createElement('div');
+    abaCombos.style.display = 'none';
+
+    function ativarTab(nome) {
+      var ativo = estiloBotao('#0078d7', '#fff', { flex: '1', fontSize: '12px', padding: '6px' });
+      var inativo = estiloBotao('#f0f0f0', '#666', { flex: '1', fontSize: '12px', padding: '6px' });
+      if (nome === 'tarefas') {
+        Object.assign(btnTabTarefas.style, ativo);
+        Object.assign(btnTabCombos.style, inativo);
+        abaTarefas.style.display = 'block';
+        abaCombos.style.display = 'none';
+      } else {
+        Object.assign(btnTabTarefas.style, inativo);
+        Object.assign(btnTabCombos.style, ativo);
+        abaTarefas.style.display = 'none';
+        abaCombos.style.display = 'block';
+        renderizarAbaCombos(abaCombos);
+      }
+    }
+    btnTabTarefas.onclick = function () { ativarTab('tarefas'); };
+    btnTabCombos.onclick = function () { ativarTab('combos'); };
+
+    tabBar.appendChild(btnTabTarefas);
+    tabBar.appendChild(btnTabCombos);
+    menu.appendChild(tabBar);
+    menu.appendChild(abaTarefas);
+    menu.appendChild(abaCombos);
+
     // Área de scroll para as tarefas
     var listaWrap = document.createElement('div');
+    listaWrap.id = 'nm-lista-tarefas';
     Object.assign(listaWrap.style, {
-      maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px'
+      maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px'
     });
-
-    if (erro) {
-      var msgErro = document.createElement('div');
-      msgErro.innerText = '⚠ ' + erro;
-      Object.assign(msgErro.style, {
-        padding: '10px', backgroundColor: '#fff3e0', border: '1px solid #ffb74d',
-        borderRadius: '4px', color: '#e65100', fontSize: '13px', textAlign: 'center'
-      });
-      listaWrap.appendChild(msgErro);
-    } else {
-      tarefas.forEach(function (t) {
-        var row = criarLinhaMultiSelect(t);
-        listaWrap.appendChild(row);
-      });
-    }
-    menu.appendChild(listaWrap);
+    preencherListaWrap(listaWrap, erro);
+    abaTarefas.appendChild(listaWrap);
 
     var hr = document.createElement('hr');
     Object.assign(hr.style, { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' });
-    menu.appendChild(hr);
+    abaTarefas.appendChild(hr);
 
     // Linha manual
     var rowManual = document.createElement('div');
@@ -274,25 +331,16 @@
     var inpCod = document.createElement('input');
     inpCod.type = 'text';
     inpCod.placeholder = 'Código manual (ex: P0999)';
-    Object.assign(inpCod.style, {
-      flex: '1', padding: '6px 8px', border: '1px solid #b3d4f5',
-      borderRadius: '4px', fontSize: '13px'
-    });
+    Object.assign(inpCod.style, estiloInputTexto({ flex: '1' }));
     var inpQtdManual = document.createElement('input');
     inpQtdManual.type = 'number';
     inpQtdManual.value = '1';
     inpQtdManual.min = '1';
     inpQtdManual.title = 'Quantidade';
-    Object.assign(inpQtdManual.style, {
-      width: '52px', padding: '6px 4px', border: '1px solid #b3d4f5',
-      borderRadius: '4px', fontSize: '13px', textAlign: 'center'
-    });
+    Object.assign(inpQtdManual.style, estiloInputTexto({ width: '52px', padding: '6px 4px', textAlign: 'center' }));
     var btnOk = document.createElement('button');
     btnOk.innerText = '▶';
-    Object.assign(btnOk.style, {
-      padding: '6px 14px', cursor: 'pointer', backgroundColor: '#546e7a',
-      color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold'
-    });
+    Object.assign(btnOk.style, estiloBotao('#546e7a', '#fff', { padding: '6px 14px' }));
     btnOk.onclick = function () {
       if (inpCod.value.trim()) {
         menu.remove();
@@ -308,11 +356,11 @@
     rowManual.appendChild(inpCod);
     rowManual.appendChild(inpQtdManual);
     rowManual.appendChild(btnOk);
-    menu.appendChild(rowManual);
+    abaTarefas.appendChild(rowManual);
 
     // Linha de data — checkbox "usar data de hoje" + input de data (valores reutilizados entre execuções)
     var rowData = document.createElement('div');
-    Object.assign(rowData.style, { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' });
+    Object.assign(rowData.style, { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '12px' });
 
     var cbHoje = document.createElement('input');
     cbHoje.type = 'checkbox';
@@ -345,17 +393,13 @@
     rowData.appendChild(cbHoje);
     rowData.appendChild(lblHoje);
     rowData.appendChild(inpData);
-    menu.appendChild(rowData);
+    abaTarefas.appendChild(rowData);
 
     // Botão "Executar selecionadas"
     var btnExecutar = document.createElement('button');
     btnExecutar.id = 'nm-btn-executar';
     btnExecutar.innerText = 'Executar tarefas selecionadas';
-    Object.assign(btnExecutar.style, {
-      padding: '8px', cursor: 'pointer', backgroundColor: '#e0e0e0',
-      color: '#999', border: 'none', borderRadius: '4px',
-      fontWeight: 'bold', fontSize: '13px', marginTop: '2px'
-    });
+    Object.assign(btnExecutar.style, estiloBotao('#e0e0e0', '#999', { marginTop: '2px' }));
     btnExecutar.disabled = true;
     btnExecutar.onclick = function () {
       var selecionadas = recolherSelecionadas();
@@ -363,7 +407,7 @@
       menu.remove();
       executarSequencia(selecionadas);
     };
-    menu.appendChild(btnExecutar);
+    abaTarefas.appendChild(btnExecutar);
 
     // Versão
     var vText = document.createElement('div');
@@ -372,6 +416,7 @@
     menu.appendChild(vText);
 
     document.body.appendChild(menu);
+    ativarTab('tarefas');
     inpCod.focus();
 
     // Actualizar estado do botão executar
@@ -391,6 +436,305 @@
 
     // Expor função para as linhas chamarem
     menu._atualizarBtnExecutar = atualizarBtnExecutar;
+  }
+
+  // Preenche a área de lista com as tarefas atuais (ou mensagem de erro)
+  function preencherListaWrap(listaWrap, erro) {
+    listaWrap.innerHTML = '';
+    if (erro) {
+      var msgErro = document.createElement('div');
+      msgErro.innerText = '⚠ ' + erro;
+      Object.assign(msgErro.style, {
+        padding: '10px', backgroundColor: '#fff3e0', border: '1px solid #ffb74d',
+        borderRadius: '4px', color: '#e65100', fontSize: '13px', textAlign: 'center'
+      });
+      listaWrap.appendChild(msgErro);
+    } else {
+      tarefas.forEach(function (t) {
+        listaWrap.appendChild(criarLinhaMultiSelect(t));
+      });
+    }
+  }
+
+  // ✅ Refresca a lista do menu já aberto (usado quando a cache é substituída
+  // pela resposta de rede), preservando a seleção/quantidades que já lá estavam
+  function atualizarListaMenu(erro) {
+    var menu = document.getElementById('nm-menu');
+    if (!menu) return;
+    var listaWrap = menu.querySelector('#nm-lista-tarefas');
+    if (!listaWrap) return;
+
+    var selecaoAtual = {};
+    recolherSelecionadas().forEach(function (item) { selecaoAtual[item.cod] = item.qty; });
+
+    preencherListaWrap(listaWrap, erro);
+
+    if (!erro) {
+      Array.prototype.forEach.call(listaWrap.children, function (row) {
+        var cb = row.querySelector && row.querySelector('input[type="checkbox"][data-cod]');
+        if (cb && selecaoAtual.hasOwnProperty(cb.dataset.cod) && row._selecionar) {
+          row._selecionar(true);
+          var qtdInp = row.querySelector('input[data-qtd]');
+          if (qtdInp) qtdInp.value = selecaoAtual[cb.dataset.cod];
+        }
+      });
+    }
+
+    if (menu._atualizarBtnExecutar) menu._atualizarBtnExecutar();
+  }
+
+  // ── Combos (grupos de tarefas guardados pelo utilizador) ───────────────
+  function obterCombos() {
+    try { return JSON.parse(GM_getValue('combos', '[]')); } catch (e) { return []; }
+  }
+  function guardarCombos(lista) {
+    GM_setValue('combos', JSON.stringify(lista));
+  }
+
+  function renderizarAbaCombos(container) {
+    container.innerHTML = '';
+
+    var btnCriar = document.createElement('button');
+    btnCriar.innerText = '💾 Guardar seleção atual da aba Tarefas como combo';
+    Object.assign(btnCriar.style, estiloBotao('#546e7a', '#fff', { marginBottom: '10px', fontSize: '12px' }));
+    btnCriar.onclick = function () {
+      var selecionadas = recolherSelecionadas();
+      if (!selecionadas.length) {
+        showToast('Seleciona tarefas na aba "Tarefas" primeiro', true);
+        return;
+      }
+      var nome = window.prompt('Nome do combo:', '');
+      if (!nome || !nome.trim()) return;
+      var combos = obterCombos();
+      combos.push({ id: Date.now(), nome: nome.trim(), itens: selecionadas });
+      guardarCombos(combos);
+      renderizarAbaCombos(container);
+      showToast('✓ Combo "' + nome.trim() + '" guardado', false);
+    };
+    container.appendChild(btnCriar);
+
+    var combos = obterCombos();
+    if (!combos.length) {
+      var vazio = document.createElement('div');
+      vazio.innerText = 'Ainda não tens combos guardados.';
+      Object.assign(vazio.style, { fontSize: '12.5px', color: '#999', textAlign: 'center', padding: '14px 0' });
+      container.appendChild(vazio);
+      return;
+    }
+
+    var listaWrapCombos = document.createElement('div');
+    Object.assign(listaWrapCombos.style, { maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' });
+
+    combos.forEach(function (combo) {
+      var row = document.createElement('div');
+      Object.assign(row.style, {
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '4px',
+        border: '1px solid #e0e0e0', backgroundColor: '#fafafa'
+      });
+
+      var info = document.createElement('div');
+      info.style.flex = '1';
+      var nomeEl = document.createElement('div');
+      nomeEl.innerText = combo.nome;
+      Object.assign(nomeEl.style, { fontWeight: 'bold', color: '#0078d7', fontSize: '13px' });
+      var resumo = document.createElement('div');
+      resumo.innerText = combo.itens.map(function (i) { return i.cod + '×' + i.qty; }).join(', ');
+      Object.assign(resumo.style, { fontSize: '11px', color: '#777', marginTop: '2px' });
+      info.appendChild(nomeEl);
+      info.appendChild(resumo);
+
+      var btnUsar = document.createElement('button');
+      btnUsar.innerText = '▶';
+      btnUsar.title = 'Usar combo';
+      Object.assign(btnUsar.style, estiloBotao('#0078d7', '#fff', { padding: '6px 10px' }));
+      btnUsar.onclick = function () {
+        var exMenu = document.getElementById('nm-menu');
+        if (exMenu) exMenu.remove();
+        executarSequencia(combo.itens);
+      };
+
+      var btnEditar = document.createElement('button');
+      btnEditar.innerText = '✏️';
+      btnEditar.title = 'Editar combo';
+      Object.assign(btnEditar.style, estiloBotao('#f5f5f5', '#546e7a', { padding: '6px 8px' }));
+      btnEditar.onclick = function () {
+        mostrarEdicaoCombo(combo, container);
+      };
+
+      var btnApagar = document.createElement('button');
+      btnApagar.innerText = '🗑';
+      btnApagar.title = 'Apagar combo';
+      Object.assign(btnApagar.style, estiloBotao('#f5f5f5', '#c62828', { padding: '6px 8px' }));
+      btnApagar.onclick = function () {
+        if (!window.confirm('Apagar o combo "' + combo.nome + '"?')) return; // ✅ confirma antes de apagar
+        var atualizados = obterCombos().filter(function (c) { return c.id !== combo.id; });
+        guardarCombos(atualizados);
+        renderizarAbaCombos(container);
+      };
+
+      row.appendChild(info);
+      row.appendChild(btnUsar);
+      row.appendChild(btnEditar);
+      row.appendChild(btnApagar);
+      listaWrapCombos.appendChild(row);
+    });
+
+    container.appendChild(listaWrapCombos);
+  }
+
+  // ✅ Painel de edição de combo — renomear, ajustar quantidades ou remover itens
+  function mostrarEdicaoCombo(combo, containerCombos) {
+    var exEdit = document.getElementById('nm-edit-combo');
+    if (exEdit) exEdit.remove();
+
+    var box = document.createElement('div');
+    box.id = 'nm-edit-combo';
+    var fab = document.getElementById('nm-fab');
+    var rect = fab.getBoundingClientRect();
+    Object.assign(box.style, {
+      position: 'fixed', top: rect.top + 'px', left: (rect.right + 10) + 'px', zIndex: '10002',
+      backgroundColor: '#fff', border: '2px solid #0078d7', padding: '12px', borderRadius: '8px',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.3)', minWidth: '280px', maxWidth: '380px',
+      fontFamily: 'Segoe UI,Arial,sans-serif'
+    });
+
+    var tit = document.createElement('div');
+    tit.innerText = '✏️ Editar combo';
+    Object.assign(tit.style, { fontWeight: 'bold', color: '#0078d7', marginBottom: '8px', fontSize: '13px' });
+    box.appendChild(tit);
+
+    var inpNome = document.createElement('input');
+    inpNome.type = 'text';
+    inpNome.value = combo.nome;
+    Object.assign(inpNome.style, estiloInputTexto({ width: '100%', marginBottom: '8px' }));
+    box.appendChild(inpNome);
+
+    // Cópia editável dos itens — só grava no combo original se clicar em "Guardar"
+    var itensEditaveis = combo.itens.map(function (i) { return { cod: i.cod, qty: i.qty }; });
+
+    var itensWrap = document.createElement('div');
+    Object.assign(itensWrap.style, { maxHeight: '200px', overflowY: 'auto', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '4px' });
+
+    function renderItens() {
+      itensWrap.innerHTML = '';
+      if (!itensEditaveis.length) {
+        var vazio = document.createElement('div');
+        vazio.innerText = 'Sem itens — apaga o combo se já não precisas dele.';
+        Object.assign(vazio.style, { fontSize: '12px', color: '#999', textAlign: 'center', padding: '8px 0' });
+        itensWrap.appendChild(vazio);
+        return;
+      }
+      itensEditaveis.forEach(function (item, idx) {
+        var row = document.createElement('div');
+        Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '6px' });
+
+        var codLbl = document.createElement('span');
+        codLbl.innerText = item.cod;
+        Object.assign(codLbl.style, { flex: '1', fontSize: '12.5px', color: '#333' });
+
+        var qtdInp = document.createElement('input');
+        qtdInp.type = 'number';
+        qtdInp.min = '1';
+        qtdInp.value = item.qty;
+        Object.assign(qtdInp.style, estiloInputTexto({ width: '48px', padding: '3px 4px', fontSize: '12px', textAlign: 'center' }));
+        qtdInp.onchange = function () { itensEditaveis[idx].qty = parseInt(qtdInp.value, 10) || 1; };
+
+        var btnRemover = document.createElement('button');
+        btnRemover.innerText = '✕';
+        Object.assign(btnRemover.style, estiloBotao('#f5f5f5', '#c62828', { padding: '3px 8px', fontSize: '11px' }));
+        btnRemover.onclick = function () {
+          itensEditaveis.splice(idx, 1);
+          renderItens();
+        };
+
+        row.appendChild(codLbl);
+        row.appendChild(qtdInp);
+        row.appendChild(btnRemover);
+        itensWrap.appendChild(row);
+      });
+    }
+    renderItens();
+    box.appendChild(itensWrap);
+
+    var rowBtns = document.createElement('div');
+    Object.assign(rowBtns.style, { display: 'flex', gap: '6px' });
+    var btnGuardar = document.createElement('button');
+    btnGuardar.innerText = '💾 Guardar';
+    Object.assign(btnGuardar.style, estiloBotao('#0078d7', '#fff', { flex: '1' }));
+    btnGuardar.onclick = function () {
+      var nomeFinal = inpNome.value.trim();
+      if (!nomeFinal) { showToast('O combo precisa de um nome', true); return; }
+      if (!itensEditaveis.length) { showToast('O combo precisa de pelo menos uma tarefa', true); return; }
+      var combos = obterCombos();
+      var idxCombo = -1;
+      for (var i = 0; i < combos.length; i++) { if (combos[i].id === combo.id) { idxCombo = i; break; } }
+      if (idxCombo !== -1) {
+        combos[idxCombo].nome = nomeFinal;
+        combos[idxCombo].itens = itensEditaveis;
+        guardarCombos(combos);
+      }
+      box.remove();
+      renderizarAbaCombos(containerCombos);
+      showToast('✓ Combo atualizado', false);
+    };
+    var btnCancelar = document.createElement('button');
+    btnCancelar.innerText = 'Cancelar';
+    Object.assign(btnCancelar.style, estiloBotao('#e0e0e0', '#555', { flex: '1' }));
+    btnCancelar.onclick = function () { box.remove(); };
+    rowBtns.appendChild(btnGuardar);
+    rowBtns.appendChild(btnCancelar);
+    box.appendChild(rowBtns);
+
+    document.body.appendChild(box);
+  }
+
+  // ✅ Ecrã de confirmação — usado apenas por "Repetir última sequência",
+  // para poderes ver o que vai ser feito e cancelar antes de correr
+  function mostrarConfirmacaoExecucao(lista) {
+    var exConf = document.getElementById('nm-confirm');
+    if (exConf) exConf.remove();
+
+    var box = document.createElement('div');
+    box.id = 'nm-confirm';
+    var fab = document.getElementById('nm-fab');
+    var rect = fab.getBoundingClientRect();
+    Object.assign(box.style, {
+      position: 'fixed', top: rect.top + 'px', left: (rect.right + 10) + 'px', zIndex: '10002',
+      backgroundColor: '#fff', border: '2px solid #0078d7', padding: '12px', borderRadius: '8px',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.3)', minWidth: '260px', maxWidth: '380px',
+      fontFamily: 'Segoe UI,Arial,sans-serif'
+    });
+
+    var tit = document.createElement('div');
+    tit.innerText = 'Repetir ' + lista.length + ' tarefa' + (lista.length > 1 ? 's' : '') + ':';
+    Object.assign(tit.style, { fontWeight: 'bold', color: '#0078d7', marginBottom: '8px', fontSize: '13px' });
+    box.appendChild(tit);
+
+    var listaEl = document.createElement('div');
+    Object.assign(listaEl.style, { maxHeight: '160px', overflowY: 'auto', marginBottom: '10px', fontSize: '12.5px', color: '#444' });
+    lista.forEach(function (item) {
+      var l = document.createElement('div');
+      l.innerText = item.cod + ' × ' + item.qty;
+      l.style.padding = '2px 0';
+      listaEl.appendChild(l);
+    });
+    box.appendChild(listaEl);
+
+    var rowBtns = document.createElement('div');
+    Object.assign(rowBtns.style, { display: 'flex', gap: '6px' });
+    var btnConf = document.createElement('button');
+    btnConf.innerText = '✓ Confirmar';
+    Object.assign(btnConf.style, estiloBotao('#0078d7', '#fff', { flex: '1' }));
+    btnConf.onclick = function () { box.remove(); executarSequencia(lista); };
+    var btnCanc = document.createElement('button');
+    btnCanc.innerText = 'Cancelar';
+    Object.assign(btnCanc.style, estiloBotao('#e0e0e0', '#555', { flex: '1' }));
+    btnCanc.onclick = function () { box.remove(); };
+    rowBtns.appendChild(btnConf);
+    rowBtns.appendChild(btnCanc);
+    box.appendChild(rowBtns);
+
+    document.body.appendChild(box);
   }
 
   // Cria uma linha de tarefa com checkbox + campo de quantidade (oculto até selecionar)
@@ -424,10 +768,7 @@
     qtdInp.value = '1';
     qtdInp.min = '1';
     qtdInp.dataset.qtd = 'true';
-    Object.assign(qtdInp.style, {
-      width: '48px', padding: '3px 4px', border: '1px solid #b3d4f5',
-      borderRadius: '4px', fontSize: '12px', textAlign: 'center'
-    });
+    Object.assign(qtdInp.style, estiloInputTexto({ width: '48px', padding: '3px 4px', fontSize: '12px', textAlign: 'center' }));
     qtdInp.onclick = function (e) { e.stopPropagation(); };
     qtdWrap.appendChild(qtdLabel);
     qtdWrap.appendChild(qtdInp);
@@ -450,6 +791,7 @@
 
     row.onclick = function () { toggleSelecao(!cb.checked); };
     cb.onclick = function (e) { e.stopPropagation(); toggleSelecao(cb.checked); };
+    row._selecionar = toggleSelecao; // exposto para reaplicar seleção após refresh da lista
 
     row.appendChild(cb);
     row.appendChild(label);
@@ -478,6 +820,7 @@
     if (!lista.length) return;
     var index = 0;
 
+    GM_setValue('ultimaSequencia', JSON.stringify(lista)); // ✅ para o botão "Repetir última sequência"
     fabRunning(); // ✅ borda amarela intermitente enquanto processa
 
     function proxima() {
@@ -660,9 +1003,35 @@
           if (el) el.remove();
         });
       } else {
+        // ✅ OTIMIZAÇÃO: mostra logo a lista em cache (se existir) sem esperar
+        // pela rede, e atualiza em segundo plano assim que a resposta chegar
+        var cacheBruta = GM_getValue(CACHE_KEY, null);
+        var tinhaCache = false;
+        if (cacheBruta) {
+          try {
+            var tarefasCache = JSON.parse(cacheBruta);
+            if (tarefasCache && tarefasCache.length) {
+              tarefas = tarefasCache;
+              tinhaCache = true;
+              abrirMenu(null);
+            }
+          } catch (e) { /* cache inválida, ignora */ }
+        }
+
         carregarTarefas(function (t, erro) {
-          tarefas = t;
-          abrirMenu(erro);
+          var listaMudou = JSON.stringify(t) !== JSON.stringify(tarefas);
+          if (!tinhaCache) {
+            // não havia cache: este é o primeiro carregamento, abre agora
+            tarefas = erro ? [] : t;
+            abrirMenu(erro);
+            return;
+          }
+          // já havia cache e o menu já está aberto: só refresca se mudou algo
+          if (!erro && listaMudou) {
+            tarefas = t;
+            atualizarListaMenu(null);
+          }
+          // se der erro mas já tínhamos cache válida, mantém a cache visível e ignora o erro
         });
       }
     });
