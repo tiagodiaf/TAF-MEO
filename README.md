@@ -41,6 +41,12 @@ Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 
+---
+### 3. Ajuste campos Orçamento
+Remove o limite de comprimento do campo de pesquisa do Número externo e coloca o limite de export para o máx.
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/ajuste-campos-orcamento.user.js)**
+
+O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
 Bom trabalho
