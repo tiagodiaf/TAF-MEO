@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Nemesis Tarefas
 // @namespace    https://github.com/tiagodiaf/TAF-MEO/
-// @version      1.8
+// @version      1.9
 // @updateURL    https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
 // @downloadURL  https://github.com/tiagodiaf/TAF-MEO/raw/refs/heads/main/nemesis-tarefas.user.js
-// @description  Preenchimento otimizado de tarefas no Nemesis
+// @description  Preenchimento otimizado de tarefas no Nemesis (abas GPON / Fibro Global)
 // @author       Tiago Afonso
 // @match        https://nemesis.telecom.pt/Nemesis_v5/Recolhas.Recolhas_List.aspx*
 // @grant        GM_setValue
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const VERSAO_SCRIPT = "1.8";
+  const VERSAO_SCRIPT = "1.9";
   const GIST_URL = "https://gist.githubusercontent.com/tiagodiaf/611272ebb7015a7d3c7a6f12c2c1d0a6/raw/nemesis-tarefas.json?v=" + Date.now();
   const ID_NUM_MECANO       = 'wtWBAddTarefas_wtRecolha_Nmec';
   const ID_INPUT_TAREFA     = 'wtWBAddTarefas_wtInputTarefa';
@@ -274,91 +274,46 @@
       } catch (e) { /* ignora cache inválida */ }
     }
 
-    // ── Barra de tabs: Tarefas / Combos ───────────────────────────────────
+    // ── Barra de tabs: GPON / Fibro Global ─────────────────────────────────
     var tabBar = document.createElement('div');
     Object.assign(tabBar.style, { display: 'flex', gap: '4px', marginBottom: '6px' });
 
-    var btnTabTarefas = document.createElement('button');
-    btnTabTarefas.innerText = '📋 Tarefas';
-    var btnTabCombos = document.createElement('button');
-    btnTabCombos.innerText = '⭐ Combos';
+    var btnTabGpon = document.createElement('button');
+    btnTabGpon.innerText = '📋 GPON';
+    var btnTabFibro = document.createElement('button');
+    btnTabFibro.innerText = '🌐 Fibro Global';
 
-    var abaTarefas = document.createElement('div');
-    var abaCombos = document.createElement('div');
-    abaCombos.style.display = 'none';
+    var abaGpon = construirAbaTarefas('gpon', 'Código manual (ex: P0999)', erro);
+    var abaFibro = construirAbaTarefas('fibro', 'Código manual (ex: ZP0999)', erro);
+    abaFibro.el.style.display = 'none';
 
     function ativarTab(nome) {
       var ativo = estiloBotao('#0078d7', '#fff', { flex: '1', fontSize: '12px', padding: '6px' });
       var inativo = estiloBotao('#f0f0f0', '#666', { flex: '1', fontSize: '12px', padding: '6px' });
-      if (nome === 'tarefas') {
-        Object.assign(btnTabTarefas.style, ativo);
-        Object.assign(btnTabCombos.style, inativo);
-        abaTarefas.style.display = 'block';
-        abaCombos.style.display = 'none';
+      if (nome === 'gpon') {
+        Object.assign(btnTabGpon.style, ativo);
+        Object.assign(btnTabFibro.style, inativo);
+        abaGpon.el.style.display = 'block';
+        abaFibro.el.style.display = 'none';
+        if (abaGpon.inputManual) abaGpon.inputManual.focus();
       } else {
-        Object.assign(btnTabTarefas.style, inativo);
-        Object.assign(btnTabCombos.style, ativo);
-        abaTarefas.style.display = 'none';
-        abaCombos.style.display = 'block';
-        renderizarAbaCombos(abaCombos);
+        Object.assign(btnTabGpon.style, inativo);
+        Object.assign(btnTabFibro.style, ativo);
+        abaGpon.el.style.display = 'none';
+        abaFibro.el.style.display = 'block';
+        if (abaFibro.inputManual) abaFibro.inputManual.focus();
       }
     }
-    btnTabTarefas.onclick = function () { ativarTab('tarefas'); };
-    btnTabCombos.onclick = function () { ativarTab('combos'); };
+    btnTabGpon.onclick = function () { ativarTab('gpon'); };
+    btnTabFibro.onclick = function () { ativarTab('fibro'); };
 
-    tabBar.appendChild(btnTabTarefas);
-    tabBar.appendChild(btnTabCombos);
+    tabBar.appendChild(btnTabGpon);
+    tabBar.appendChild(btnTabFibro);
     menu.appendChild(tabBar);
-    menu.appendChild(abaTarefas);
-    menu.appendChild(abaCombos);
+    menu.appendChild(abaGpon.el);
+    menu.appendChild(abaFibro.el);
 
-    // Área de scroll para as tarefas
-    var listaWrap = document.createElement('div');
-    listaWrap.id = 'nm-lista-tarefas';
-    Object.assign(listaWrap.style, {
-      maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px'
-    });
-    preencherListaWrap(listaWrap, erro);
-    abaTarefas.appendChild(listaWrap);
-
-    var hr = document.createElement('hr');
-    Object.assign(hr.style, { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' });
-    abaTarefas.appendChild(hr);
-
-    // Linha manual
-    var rowManual = document.createElement('div');
-    Object.assign(rowManual.style, { display: 'flex', gap: '6px', alignItems: 'center' });
-    var inpCod = document.createElement('input');
-    inpCod.type = 'text';
-    inpCod.placeholder = 'Código manual (ex: P0999)';
-    Object.assign(inpCod.style, estiloInputTexto({ flex: '1' }));
-    var inpQtdManual = document.createElement('input');
-    inpQtdManual.type = 'number';
-    inpQtdManual.value = '1';
-    inpQtdManual.min = '1';
-    inpQtdManual.title = 'Quantidade';
-    Object.assign(inpQtdManual.style, estiloInputTexto({ width: '52px', padding: '6px 4px', textAlign: 'center' }));
-    var btnOk = document.createElement('button');
-    btnOk.innerText = '▶';
-    Object.assign(btnOk.style, estiloBotao('#546e7a', '#fff', { padding: '6px 14px' }));
-    btnOk.onclick = function () {
-      if (inpCod.value.trim()) {
-        menu.remove();
-        executarSequencia([{ cod: inpCod.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
-      }
-    };
-    inpCod.onkeydown = function (e) {
-      if (e.key === 'Enter' && this.value.trim()) {
-        menu.remove();
-        executarSequencia([{ cod: this.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
-      }
-    };
-    rowManual.appendChild(inpCod);
-    rowManual.appendChild(inpQtdManual);
-    rowManual.appendChild(btnOk);
-    abaTarefas.appendChild(rowManual);
-
-    // Linha de data — checkbox "usar data de hoje" + input de data (valores reutilizados entre execuções)
+    // Linha de data — partilhada pelas duas abas: checkbox "usar data de hoje" + input de data
     var rowData = document.createElement('div');
     Object.assign(rowData.style, { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '12px' });
 
@@ -393,21 +348,7 @@
     rowData.appendChild(cbHoje);
     rowData.appendChild(lblHoje);
     rowData.appendChild(inpData);
-    abaTarefas.appendChild(rowData);
-
-    // Botão "Executar selecionadas"
-    var btnExecutar = document.createElement('button');
-    btnExecutar.id = 'nm-btn-executar';
-    btnExecutar.innerText = 'Executar tarefas selecionadas';
-    Object.assign(btnExecutar.style, estiloBotao('#e0e0e0', '#999', { marginTop: '2px' }));
-    btnExecutar.disabled = true;
-    btnExecutar.onclick = function () {
-      var selecionadas = recolherSelecionadas();
-      if (!selecionadas.length) return;
-      menu.remove();
-      executarSequencia(selecionadas);
-    };
-    abaTarefas.appendChild(btnExecutar);
+    menu.appendChild(rowData);
 
     // Versão
     var vText = document.createElement('div');
@@ -416,12 +357,78 @@
     menu.appendChild(vText);
 
     document.body.appendChild(menu);
-    ativarTab('tarefas');
-    inpCod.focus();
+    menu._abaGpon = abaGpon;
+    menu._abaFibro = abaFibro;
+    ativarTab('gpon');
+  }
 
-    // Actualizar estado do botão executar
+  // Constrói o conteúdo de uma aba de tarefas (lista + entrada manual + botão executar).
+  // tipo: 'gpon' (códigos sem prefixo Z) ou 'fibro' (códigos com prefixo Z, ex: ZP0140)
+  function construirAbaTarefas(tipo, placeholderManual, erroInicial) {
+    var container = document.createElement('div');
+
+    var listaWrap = document.createElement('div');
+    listaWrap.id = 'nm-lista-tarefas-' + tipo;
+    Object.assign(listaWrap.style, {
+      maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px'
+    });
+    container.appendChild(listaWrap);
+
+    var hr = document.createElement('hr');
+    Object.assign(hr.style, { margin: '4px 0', border: 'none', borderTop: '1px solid #ddd' });
+    container.appendChild(hr);
+
+    // Linha manual
+    var rowManual = document.createElement('div');
+    Object.assign(rowManual.style, { display: 'flex', gap: '6px', alignItems: 'center' });
+    var inpCod = document.createElement('input');
+    inpCod.type = 'text';
+    inpCod.placeholder = placeholderManual;
+    Object.assign(inpCod.style, estiloInputTexto({ flex: '1' }));
+    var inpQtdManual = document.createElement('input');
+    inpQtdManual.type = 'number';
+    inpQtdManual.value = '1';
+    inpQtdManual.min = '1';
+    inpQtdManual.title = 'Quantidade';
+    Object.assign(inpQtdManual.style, estiloInputTexto({ width: '52px', padding: '6px 4px', textAlign: 'center' }));
+    var btnOk = document.createElement('button');
+    btnOk.innerText = '▶';
+    Object.assign(btnOk.style, estiloBotao('#546e7a', '#fff', { padding: '6px 14px' }));
+    btnOk.onclick = function () {
+      if (inpCod.value.trim()) {
+        var menu = document.getElementById('nm-menu');
+        if (menu) menu.remove();
+        executarSequencia([{ cod: inpCod.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
+      }
+    };
+    inpCod.onkeydown = function (e) {
+      if (e.key === 'Enter' && this.value.trim()) {
+        var menu = document.getElementById('nm-menu');
+        if (menu) menu.remove();
+        executarSequencia([{ cod: this.value.trim(), qty: parseInt(inpQtdManual.value, 10) || 1 }]);
+      }
+    };
+    rowManual.appendChild(inpCod);
+    rowManual.appendChild(inpQtdManual);
+    rowManual.appendChild(btnOk);
+    container.appendChild(rowManual);
+
+    // Botão "Executar selecionadas"
+    var btnExecutar = document.createElement('button');
+    btnExecutar.innerText = 'Executar tarefas selecionadas';
+    Object.assign(btnExecutar.style, estiloBotao('#e0e0e0', '#999', { marginTop: '10px' }));
+    btnExecutar.disabled = true;
+    btnExecutar.onclick = function () {
+      var selecionadas = recolherSelecionadas(listaWrap);
+      if (!selecionadas.length) return;
+      var menu = document.getElementById('nm-menu');
+      if (menu) menu.remove();
+      executarSequencia(selecionadas);
+    };
+    container.appendChild(btnExecutar);
+
     function atualizarBtnExecutar() {
-      var selecionadas = recolherSelecionadas();
+      var selecionadas = recolherSelecionadas(listaWrap);
       var n = selecionadas.length;
       if (n > 0) {
         btnExecutar.disabled = false;
@@ -434,12 +441,43 @@
       }
     }
 
-    // Expor função para as linhas chamarem
-    menu._atualizarBtnExecutar = atualizarBtnExecutar;
+    // Refresca a lista desta aba (usada na abertura e quando a cache é substituída
+    // pela resposta de rede), preservando a seleção/quantidades que já lá estavam
+    function refresh(erro) {
+      var selecaoAtual = {};
+      recolherSelecionadas(listaWrap).forEach(function (item) { selecaoAtual[item.cod] = item.qty; });
+
+      preencherListaWrap(listaWrap, erro, obterTarefasPorTipo(tipo), atualizarBtnExecutar);
+
+      if (!erro) {
+        Array.prototype.forEach.call(listaWrap.children, function (row) {
+          var cb = row.querySelector && row.querySelector('input[type="checkbox"][data-cod]');
+          if (cb && selecaoAtual.hasOwnProperty(cb.dataset.cod) && row._selecionar) {
+            row._selecionar(true);
+            var qtdInp = row.querySelector('input[data-qtd]');
+            if (qtdInp) qtdInp.value = selecaoAtual[cb.dataset.cod];
+          }
+        });
+      }
+      atualizarBtnExecutar();
+    }
+
+    refresh(erroInicial);
+
+    return { el: container, refresh: refresh, atualizarBtnExecutar: atualizarBtnExecutar, inputManual: inpCod };
   }
 
-  // Preenche a área de lista com as tarefas atuais (ou mensagem de erro)
-  function preencherListaWrap(listaWrap, erro) {
+  // Filtra a lista única de tarefas consoante o prefixo do código:
+  // 'fibro' → códigos que começam por Z (ex: ZP0140); 'gpon' → os restantes
+  function obterTarefasPorTipo(tipo) {
+    return tarefas.filter(function (t) {
+      var temZ = /^Z/i.test(String(t.cod || '').trim());
+      return tipo === 'fibro' ? temZ : !temZ;
+    });
+  }
+
+  // Preenche uma área de lista com uma dada lista de tarefas (ou mensagem de erro)
+  function preencherListaWrap(listaWrap, erro, lista, onToggleChange) {
     listaWrap.innerHTML = '';
     if (erro) {
       var msgErro = document.createElement('div');
@@ -449,243 +487,25 @@
         borderRadius: '4px', color: '#e65100', fontSize: '13px', textAlign: 'center'
       });
       listaWrap.appendChild(msgErro);
+    } else if (!lista.length) {
+      var msgVazio = document.createElement('div');
+      msgVazio.innerText = 'Sem tarefas nesta lista.';
+      Object.assign(msgVazio.style, { fontSize: '12.5px', color: '#999', textAlign: 'center', padding: '14px 0' });
+      listaWrap.appendChild(msgVazio);
     } else {
-      tarefas.forEach(function (t) {
-        listaWrap.appendChild(criarLinhaMultiSelect(t));
+      lista.forEach(function (t) {
+        listaWrap.appendChild(criarLinhaMultiSelect(t, onToggleChange));
       });
     }
   }
 
-  // ✅ Refresca a lista do menu já aberto (usado quando a cache é substituída
-  // pela resposta de rede), preservando a seleção/quantidades que já lá estavam
+  // ✅ Refresca as listas das duas abas do menu já aberto (usado quando a cache
+  // é substituída pela resposta de rede); cada aba preserva a sua própria seleção
   function atualizarListaMenu(erro) {
     var menu = document.getElementById('nm-menu');
     if (!menu) return;
-    var listaWrap = menu.querySelector('#nm-lista-tarefas');
-    if (!listaWrap) return;
-
-    var selecaoAtual = {};
-    recolherSelecionadas().forEach(function (item) { selecaoAtual[item.cod] = item.qty; });
-
-    preencherListaWrap(listaWrap, erro);
-
-    if (!erro) {
-      Array.prototype.forEach.call(listaWrap.children, function (row) {
-        var cb = row.querySelector && row.querySelector('input[type="checkbox"][data-cod]');
-        if (cb && selecaoAtual.hasOwnProperty(cb.dataset.cod) && row._selecionar) {
-          row._selecionar(true);
-          var qtdInp = row.querySelector('input[data-qtd]');
-          if (qtdInp) qtdInp.value = selecaoAtual[cb.dataset.cod];
-        }
-      });
-    }
-
-    if (menu._atualizarBtnExecutar) menu._atualizarBtnExecutar();
-  }
-
-  // ── Combos (grupos de tarefas guardados pelo utilizador) ───────────────
-  function obterCombos() {
-    try { return JSON.parse(GM_getValue('combos', '[]')); } catch (e) { return []; }
-  }
-  function guardarCombos(lista) {
-    GM_setValue('combos', JSON.stringify(lista));
-  }
-
-  function renderizarAbaCombos(container) {
-    container.innerHTML = '';
-
-    var btnCriar = document.createElement('button');
-    btnCriar.innerText = '💾 Guardar seleção atual da aba Tarefas como combo';
-    Object.assign(btnCriar.style, estiloBotao('#546e7a', '#fff', { marginBottom: '10px', fontSize: '12px' }));
-    btnCriar.onclick = function () {
-      var selecionadas = recolherSelecionadas();
-      if (!selecionadas.length) {
-        showToast('Seleciona tarefas na aba "Tarefas" primeiro', true);
-        return;
-      }
-      var nome = window.prompt('Nome do combo:', '');
-      if (!nome || !nome.trim()) return;
-      var combos = obterCombos();
-      combos.push({ id: Date.now(), nome: nome.trim(), itens: selecionadas });
-      guardarCombos(combos);
-      renderizarAbaCombos(container);
-      showToast('✓ Combo "' + nome.trim() + '" guardado', false);
-    };
-    container.appendChild(btnCriar);
-
-    var combos = obterCombos();
-    if (!combos.length) {
-      var vazio = document.createElement('div');
-      vazio.innerText = 'Ainda não tens combos guardados.';
-      Object.assign(vazio.style, { fontSize: '12.5px', color: '#999', textAlign: 'center', padding: '14px 0' });
-      container.appendChild(vazio);
-      return;
-    }
-
-    var listaWrapCombos = document.createElement('div');
-    Object.assign(listaWrapCombos.style, { maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' });
-
-    combos.forEach(function (combo) {
-      var row = document.createElement('div');
-      Object.assign(row.style, {
-        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '4px',
-        border: '1px solid #e0e0e0', backgroundColor: '#fafafa'
-      });
-
-      var info = document.createElement('div');
-      info.style.flex = '1';
-      var nomeEl = document.createElement('div');
-      nomeEl.innerText = combo.nome;
-      Object.assign(nomeEl.style, { fontWeight: 'bold', color: '#0078d7', fontSize: '13px' });
-      var resumo = document.createElement('div');
-      resumo.innerText = combo.itens.map(function (i) { return i.cod + '×' + i.qty; }).join(', ');
-      Object.assign(resumo.style, { fontSize: '11px', color: '#777', marginTop: '2px' });
-      info.appendChild(nomeEl);
-      info.appendChild(resumo);
-
-      var btnUsar = document.createElement('button');
-      btnUsar.innerText = '▶';
-      btnUsar.title = 'Usar combo';
-      Object.assign(btnUsar.style, estiloBotao('#0078d7', '#fff', { padding: '6px 10px' }));
-      btnUsar.onclick = function () {
-        var exMenu = document.getElementById('nm-menu');
-        if (exMenu) exMenu.remove();
-        executarSequencia(combo.itens);
-      };
-
-      var btnEditar = document.createElement('button');
-      btnEditar.innerText = '✏️';
-      btnEditar.title = 'Editar combo';
-      Object.assign(btnEditar.style, estiloBotao('#f5f5f5', '#546e7a', { padding: '6px 8px' }));
-      btnEditar.onclick = function () {
-        mostrarEdicaoCombo(combo, container);
-      };
-
-      var btnApagar = document.createElement('button');
-      btnApagar.innerText = '🗑';
-      btnApagar.title = 'Apagar combo';
-      Object.assign(btnApagar.style, estiloBotao('#f5f5f5', '#c62828', { padding: '6px 8px' }));
-      btnApagar.onclick = function () {
-        if (!window.confirm('Apagar o combo "' + combo.nome + '"?')) return; // ✅ confirma antes de apagar
-        var atualizados = obterCombos().filter(function (c) { return c.id !== combo.id; });
-        guardarCombos(atualizados);
-        renderizarAbaCombos(container);
-      };
-
-      row.appendChild(info);
-      row.appendChild(btnUsar);
-      row.appendChild(btnEditar);
-      row.appendChild(btnApagar);
-      listaWrapCombos.appendChild(row);
-    });
-
-    container.appendChild(listaWrapCombos);
-  }
-
-  // ✅ Painel de edição de combo — renomear, ajustar quantidades ou remover itens
-  function mostrarEdicaoCombo(combo, containerCombos) {
-    var exEdit = document.getElementById('nm-edit-combo');
-    if (exEdit) exEdit.remove();
-
-    var box = document.createElement('div');
-    box.id = 'nm-edit-combo';
-    var fab = document.getElementById('nm-fab');
-    var rect = fab.getBoundingClientRect();
-    Object.assign(box.style, {
-      position: 'fixed', top: rect.top + 'px', left: (rect.right + 10) + 'px', zIndex: '10002',
-      backgroundColor: '#fff', border: '2px solid #0078d7', padding: '12px', borderRadius: '8px',
-      boxShadow: '0 4px 15px rgba(0,0,0,0.3)', minWidth: '280px', maxWidth: '380px',
-      fontFamily: 'Segoe UI,Arial,sans-serif'
-    });
-
-    var tit = document.createElement('div');
-    tit.innerText = '✏️ Editar combo';
-    Object.assign(tit.style, { fontWeight: 'bold', color: '#0078d7', marginBottom: '8px', fontSize: '13px' });
-    box.appendChild(tit);
-
-    var inpNome = document.createElement('input');
-    inpNome.type = 'text';
-    inpNome.value = combo.nome;
-    Object.assign(inpNome.style, estiloInputTexto({ width: '100%', marginBottom: '8px' }));
-    box.appendChild(inpNome);
-
-    // Cópia editável dos itens — só grava no combo original se clicar em "Guardar"
-    var itensEditaveis = combo.itens.map(function (i) { return { cod: i.cod, qty: i.qty }; });
-
-    var itensWrap = document.createElement('div');
-    Object.assign(itensWrap.style, { maxHeight: '200px', overflowY: 'auto', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '4px' });
-
-    function renderItens() {
-      itensWrap.innerHTML = '';
-      if (!itensEditaveis.length) {
-        var vazio = document.createElement('div');
-        vazio.innerText = 'Sem itens — apaga o combo se já não precisas dele.';
-        Object.assign(vazio.style, { fontSize: '12px', color: '#999', textAlign: 'center', padding: '8px 0' });
-        itensWrap.appendChild(vazio);
-        return;
-      }
-      itensEditaveis.forEach(function (item, idx) {
-        var row = document.createElement('div');
-        Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '6px' });
-
-        var codLbl = document.createElement('span');
-        codLbl.innerText = item.cod;
-        Object.assign(codLbl.style, { flex: '1', fontSize: '12.5px', color: '#333' });
-
-        var qtdInp = document.createElement('input');
-        qtdInp.type = 'number';
-        qtdInp.min = '1';
-        qtdInp.value = item.qty;
-        Object.assign(qtdInp.style, estiloInputTexto({ width: '48px', padding: '3px 4px', fontSize: '12px', textAlign: 'center' }));
-        qtdInp.onchange = function () { itensEditaveis[idx].qty = parseInt(qtdInp.value, 10) || 1; };
-
-        var btnRemover = document.createElement('button');
-        btnRemover.innerText = '✕';
-        Object.assign(btnRemover.style, estiloBotao('#f5f5f5', '#c62828', { padding: '3px 8px', fontSize: '11px' }));
-        btnRemover.onclick = function () {
-          itensEditaveis.splice(idx, 1);
-          renderItens();
-        };
-
-        row.appendChild(codLbl);
-        row.appendChild(qtdInp);
-        row.appendChild(btnRemover);
-        itensWrap.appendChild(row);
-      });
-    }
-    renderItens();
-    box.appendChild(itensWrap);
-
-    var rowBtns = document.createElement('div');
-    Object.assign(rowBtns.style, { display: 'flex', gap: '6px' });
-    var btnGuardar = document.createElement('button');
-    btnGuardar.innerText = '💾 Guardar';
-    Object.assign(btnGuardar.style, estiloBotao('#0078d7', '#fff', { flex: '1' }));
-    btnGuardar.onclick = function () {
-      var nomeFinal = inpNome.value.trim();
-      if (!nomeFinal) { showToast('O combo precisa de um nome', true); return; }
-      if (!itensEditaveis.length) { showToast('O combo precisa de pelo menos uma tarefa', true); return; }
-      var combos = obterCombos();
-      var idxCombo = -1;
-      for (var i = 0; i < combos.length; i++) { if (combos[i].id === combo.id) { idxCombo = i; break; } }
-      if (idxCombo !== -1) {
-        combos[idxCombo].nome = nomeFinal;
-        combos[idxCombo].itens = itensEditaveis;
-        guardarCombos(combos);
-      }
-      box.remove();
-      renderizarAbaCombos(containerCombos);
-      showToast('✓ Combo atualizado', false);
-    };
-    var btnCancelar = document.createElement('button');
-    btnCancelar.innerText = 'Cancelar';
-    Object.assign(btnCancelar.style, estiloBotao('#e0e0e0', '#555', { flex: '1' }));
-    btnCancelar.onclick = function () { box.remove(); };
-    rowBtns.appendChild(btnGuardar);
-    rowBtns.appendChild(btnCancelar);
-    box.appendChild(rowBtns);
-
-    document.body.appendChild(box);
+    if (menu._abaGpon) menu._abaGpon.refresh(erro);
+    if (menu._abaFibro) menu._abaFibro.refresh(erro);
   }
 
   // ✅ Ecrã de confirmação — usado apenas por "Repetir última sequência",
@@ -738,7 +558,7 @@
   }
 
   // Cria uma linha de tarefa com checkbox + campo de quantidade (oculto até selecionar)
-  function criarLinhaMultiSelect(t) {
+  function criarLinhaMultiSelect(t, onToggleChange) {
     var row = document.createElement('div');
     Object.assign(row.style, {
       display: 'flex', alignItems: 'center', gap: '8px',
@@ -785,8 +605,7 @@
         qtdWrap.style.display = 'none';
         qtdInp.value = '1';
       }
-      var menu = document.getElementById('nm-menu');
-      if (menu && menu._atualizarBtnExecutar) menu._atualizarBtnExecutar();
+      if (onToggleChange) onToggleChange();
     }
 
     row.onclick = function () { toggleSelecao(!cb.checked); };
@@ -799,12 +618,11 @@
     return row;
   }
 
-  // Recolhe as tarefas selecionadas com as suas quantidades
-  function recolherSelecionadas() {
-    var menu = document.getElementById('nm-menu');
-    if (!menu) return [];
+  // Recolhe as tarefas selecionadas (com as suas quantidades) dentro de um elemento — normalmente a listaWrap de uma aba
+  function recolherSelecionadas(scopeEl) {
+    if (!scopeEl) return [];
     var resultado = [];
-    menu.querySelectorAll('input[type="checkbox"][data-cod]').forEach(function (cb) {
+    scopeEl.querySelectorAll('input[type="checkbox"][data-cod]').forEach(function (cb) {
       if (cb.checked) {
         var wrap = cb.closest('div');
         var qtdInp = wrap ? wrap.querySelector('input[data-qtd]') : null;
