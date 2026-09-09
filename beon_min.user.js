@@ -4,6 +4,7 @@
 // @version      1.0
 // @description  Mostra os minutos disponíveis por dia (últimos 90 dias), via erro do pedido de ausência
 // @match        https://apps.beontech.com/RH/*
+// @match        https://apps.beontech.com/rh/*
 // @grant        none
 // ==/UserScript==
 
