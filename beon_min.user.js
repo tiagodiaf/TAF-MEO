@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BeOn RH - Minutos a Mais (90 dias)
 // @namespace    beonrh
-// @version      1.0
+// @version      1.1
 // @description  Mostra os minutos disponíveis por dia (últimos 90 dias), via erro do pedido de ausência
 // @match        https://apps.beontech.com/RH/*
 // @match        https://apps.beontech.com/rh/*
@@ -11,7 +11,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '1.0';
+    const VERSION = '1.1';
     const ENDPOINT = 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
     const NUM_DIAS = 90;
     const PAUSA_MS = 350;
