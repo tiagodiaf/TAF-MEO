@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BeOn RH - Minutos a Mais (90 dias)
 // @namespace    beonrh
-// @version      1.1
-// @description  Mostra os minutos disponíveis por dia (últimos 90 dias), via erro do pedido de ausência
+// @version      1.2
+// @description  Mostra os minutos disponíveis por dia (últimos 90 dias, sem o dia de hoje), via erro do pedido de ausência
 // @match        https://apps.beontech.com/RH/*
 // @match        https://apps.beontech.com/rh/*
 // @grant        none
@@ -11,7 +11,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '1.1';
+    const VERSION = '1.2';
     const ENDPOINT = 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
     const NUM_DIAS = 90;
     const PAUSA_MS = 350;
@@ -58,6 +58,16 @@
     function pad(n) { return String(n).padStart(2, '0'); }
     function formatDate(d) {
         return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
+    }
+
+    // Converte minutos totais para o formato hh:mm
+    function minutosParaHHMM(min) {
+        if (min === null || min === undefined || isNaN(min)) return '';
+        const sinal = min < 0 ? '-' : '';
+        const abs = Math.abs(min);
+        const h = Math.floor(abs / 60);
+        const m = abs % 60;
+        return `${sinal}${pad(h)}:${pad(m)}`;
     }
 
     async function minutosDoDia(diaComp, config) {
@@ -162,7 +172,8 @@
 
         const hoje = new Date();
         const dias = [];
-        for (let i = 0; i < NUM_DIAS; i++) {
+        // Começa em i = 1 para NUNCA incluir o dia de hoje (valores viriam sempre errados)
+        for (let i = 1; i <= NUM_DIAS; i++) {
             const d = new Date(hoje);
             d.setDate(d.getDate() - i);
             dias.push(d);
@@ -188,11 +199,11 @@
         btnCfg.style.cssText = 'border:none;background:transparent;cursor:pointer;padding:2px;';
         ctrlBox.appendChild(btnCfg);
 
-        const btnMin = document.createElement('button');
-        btnMin.textContent = '_';
-        btnMin.title = 'Minimizar / expandir';
-        btnMin.style.cssText = 'border:none;background:transparent;cursor:pointer;font-weight:bold;padding:2px;';
-        ctrlBox.appendChild(btnMin);
+        const btnFechar = document.createElement('button');
+        btnFechar.textContent = '✕';
+        btnFechar.title = 'Fechar painel';
+        btnFechar.style.cssText = 'border:none;background:transparent;cursor:pointer;font-weight:bold;padding:2px;font-size:13px;color:#555;';
+        ctrlBox.appendChild(btnFechar);
 
         header.appendChild(ctrlBox);
         painel.appendChild(header);
@@ -233,7 +244,7 @@
 
         const btnCopiar = document.createElement('button');
         btnCopiar.textContent = '📋 Copiar resultados';
-        btnCopiar.title = 'Copia os resultados para a área de transferência';
+        btnCopiar.title = 'Copia os resultados para a área de transferência (conforme o filtro aplicado)';
         btnCopiar.style.cssText = 'width:100%;cursor:pointer;padding:4px;';
         barraAcoes.appendChild(btnCopiar);
 
@@ -261,12 +272,7 @@
         rodapeTotais.innerHTML = 'Total: <b>0 min</b>';
         corpoFlex.appendChild(rodapeTotais);
 
-        let minimizado = false;
-        btnMin.onclick = () => {
-            minimizado = !minimizado;
-            corpoFlex.style.display = minimizado ? 'none' : 'flex';
-            btnMin.textContent = minimizado ? '▢' : '_';
-        };
+        btnFechar.onclick = () => painel.remove();
 
         function abrirConfigView() {
             const cfg = obterConfig();
@@ -309,8 +315,15 @@
         let pararPedido = false;
 
         btnCopiar.onclick = () => {
-            const csv = resultados.map(r => `${r.dia};${r.min ?? 'erro'}`).join('\n');
-            navigator.clipboard.writeText('dia;minutos\n' + csv);
+            // Respeita o filtro "Ocultar dias com 0 min" atualmente aplicado
+            const esconderZero = filtroCheckbox.checked;
+            const linhas = resultados.filter(r => !(esconderZero && r.min === 0));
+            const csv = linhas.map(r => {
+                const minTxt = r.min === null ? 'erro' : r.min;
+                const hhmm = r.min === null ? '' : minutosParaHHMM(r.min);
+                return `${r.dia};${minTxt};${hhmm}`;
+            }).join('\n');
+            navigator.clipboard.writeText('dia;minutos;hh:mm\n' + csv);
             btnCopiar.textContent = '✅ Copiado!';
             setTimeout(() => { btnCopiar.textContent = '📋 Copiar resultados'; }, 1500);
         };
@@ -371,7 +384,7 @@
     // Criar o Botão Flutuante com Posição Configurável
     const btn = document.createElement('button');
     btn.textContent = '⏱';
-    btn.title = 'Clique: abrir painel. Arrasta para mover.';
+    btn.title = 'Clique: abrir/fechar painel. Arrasta para mover.';
 
     let estiloPosicao = '';
     for (const [prop, val] of Object.entries(POSICAO_INICIAL)) {
@@ -384,6 +397,12 @@
     const foiArrastado = tornarArrastavel(btn);
     btn.addEventListener('click', () => {
         if (foiArrastado()) return;
-        mostrarPainel();
+        // O botão flutuante agora funciona como toggle: abre se fechado, fecha se aberto
+        const existente = document.getElementById('painel-minutos-rh');
+        if (existente) {
+            existente.remove();
+        } else {
+            mostrarPainel();
+        }
     });
 })();
