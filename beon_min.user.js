@@ -10,7 +10,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.6';
+    const VERSION = '1.0';
     const ENDPOINT = 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
     const NUM_DIAS = 90;
     const PAUSA_MS = 350;
