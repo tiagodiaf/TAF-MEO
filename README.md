@@ -39,12 +39,15 @@ Automatiza o preenchimento das tarefas nas ordens de nemesis.
 
 **[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/manter_sessao_ativa.user.js)**
 
-O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
-
 ---
 ### 3. Ajuste campos Orçamento
 Remove o limite de comprimento do campo de pesquisa do Número externo e coloca o limite de export para o máx.
 **[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/ajuste-campos-orcamento.user.js)**
+
+### 4. BeOn RH - Minutos a mais
+Permite fácilmente obter uma tabela com os minutos a mais nos ultimos 90 dias
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/beon_min.js)**
+
 
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 ## Notas
