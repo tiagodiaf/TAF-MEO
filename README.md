@@ -47,7 +47,7 @@ Remove o limite de comprimento do campo de pesquisa do Número externo e coloca 
 ---
 ### 4. BeOn RH - Minutos a mais
 Permite fácilmente obter uma tabela com os minutos a mais nos ultimos 90 dias
-**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/beon_min.js)**
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/beon_min.user.js)**
 
 ---
 
