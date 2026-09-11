@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BeOn RH - Minutos a Mais (90 dias)
 // @namespace    beonrh
-// @version      1.2
-// @description  Mostra os minutos disponíveis por dia (últimos 90 dias, sem o dia de hoje), via erro do pedido de ausência
+// @version      1.4
+// @description  Mostra os minutos disponíveis por dia (últimos 90 dias, sem o dia de hoje), via erro do pedido de ausência. Com cache local e exportação CSV/XLS.
 // @match        https://apps.beontech.com/RH/*
 // @match        https://apps.beontech.com/rh/*
 // @grant        none
@@ -11,11 +11,12 @@
 (function () {
     'use strict';
 
-    const VERSION = '1.2';
+    const VERSION = '1.4';
     const ENDPOINT = 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
     const NUM_DIAS = 90;
     const PAUSA_MS = 350;
     const STORAGE_KEY = 'beonrh_minutos_config';
+    const CACHE_KEY = 'beonrh_minutos_cache';
 
     // 📍 Posição inicial do botão flutuante na página:
     const POSICAO_INICIAL = {
@@ -55,9 +56,30 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
 
+    // --- Cache de resultados por dia (evita repetir os pedidos já conhecidos) ---
+    function obterCache() {
+        try {
+            return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+        } catch {
+            return {};
+        }
+    }
+
+    function guardarCache(cache) {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    }
+
+    function limparCache() {
+        localStorage.removeItem(CACHE_KEY);
+    }
+
     function pad(n) { return String(n).padStart(2, '0'); }
     function formatDate(d) {
         return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
+    }
+    // Formato seguro para nomes de ficheiro (sem "/")
+    function formatDateFicheiro(d) {
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
 
     // Converte minutos totais para o formato hh:mm
@@ -139,6 +161,7 @@
         }[c]));
     }
 
+    // Distingue visualmente: erro de consulta (vermelho) vs 0 min legítimos (cinzento) vs valor normal
     function renderTabela(resultados, esconderZero) {
         let html = `
             <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -152,19 +175,67 @@
 
         for (const r of resultados) {
             if (esconderZero && r.min === 0) continue;
-            const valor = r.min === null
-                ? `<span style="color:#a00;cursor:help" title="${escapeHtml(r.erro || '')}">erro ⓘ</span>`
-                : `${r.min} min`;
+
+            let valor;
+            if (r.min === null) {
+                valor = `<span style="color:#c0392b;font-weight:600;cursor:help" title="${escapeHtml(r.erro || '')}">⚠ erro</span>`;
+            } else if (r.min === 0) {
+                valor = `<span style="color:#999;">0 min</span>`;
+            } else {
+                valor = `<span style="color:#111;font-weight:600;">${r.min} min</span>`;
+            }
 
             html += `
                 <tr style="border-bottom:1px solid #f0f0f0;">
                     <td style="padding:3px 4px;color:#333;text-align:left;">${r.dia}</td>
-                    <td style="padding:3px 4px;text-align:center;font-weight:600;color:#111;">${valor}</td>
+                    <td style="padding:3px 4px;text-align:center;">${valor}</td>
                 </tr>`;
         }
 
         html += '</tbody></table>';
         return html;
+    }
+
+    // Gera um ficheiro Excel (.xls, formato SpreadsheetML) sem depender de nenhuma
+    // biblioteca externa - evita problemas de CDN bloqueado pela rede da empresa.
+    // A coluna hh:mm já sai formatada como hora, pronta a usar.
+    function gerarXLS(linhas) {
+        let xml = '<?xml version="1.0"?>\n' +
+            '<?mso-application progid="Excel.Sheet"?>\n' +
+            '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+            'xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+            'xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
+            'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n' +
+            ' <Styles>\n' +
+            '  <Style ss:ID="Cabecalho"><Font ss:Bold="1"/></Style>\n' +
+            '  <Style ss:ID="Hora"><NumberFormat ss:Format="[h]:mm"/></Style>\n' +
+            ' </Styles>\n' +
+            ' <Worksheet ss:Name="Minutos">\n' +
+            '  <Table>\n' +
+            '   <Row>\n' +
+            '    <Cell ss:StyleID="Cabecalho"><Data ss:Type="String">Dia</Data></Cell>\n' +
+            '    <Cell ss:StyleID="Cabecalho"><Data ss:Type="String">Minutos</Data></Cell>\n' +
+            '    <Cell ss:StyleID="Cabecalho"><Data ss:Type="String">hh:mm</Data></Cell>\n' +
+            '   </Row>\n';
+
+        linhas.forEach(r => {
+            xml += '   <Row>\n' +
+                `    <Cell><Data ss:Type="String">${escapeHtml(r.dia)}</Data></Cell>\n`;
+            if (r.min === null) {
+                xml += '    <Cell><Data ss:Type="String">erro</Data></Cell>\n' +
+                    '    <Cell><Data ss:Type="String"></Data></Cell>\n';
+            } else {
+                const serial = r.min / 1440; // fração do dia, para o Excel interpretar como hora
+                xml += `    <Cell><Data ss:Type="Number">${r.min}</Data></Cell>\n` +
+                    `    <Cell ss:StyleID="Hora"><Data ss:Type="Number">${serial}</Data></Cell>\n`;
+            }
+            xml += '   </Row>\n';
+        });
+
+        xml += '  </Table>\n' +
+            ' </Worksheet>\n' +
+            '</Workbook>';
+        return xml;
     }
 
     function mostrarPainel() {
@@ -242,11 +313,40 @@
         btnParar.style.cssText = 'width:100%;cursor:pointer;padding:5px;font-weight:bold;';
         barraAcoes.appendChild(btnParar);
 
-        const btnCopiar = document.createElement('button');
-        btnCopiar.textContent = '📋 Copiar resultados';
-        btnCopiar.title = 'Copia os resultados para a área de transferência (conforme o filtro aplicado)';
-        btnCopiar.style.cssText = 'width:100%;cursor:pointer;padding:4px;';
-        barraAcoes.appendChild(btnCopiar);
+        // --- Menu de exportação: Copiar / CSV / XLSX ---
+        const exportWrapper = document.createElement('div');
+        exportWrapper.style.cssText = 'position:relative;width:100%;';
+
+        const btnExportar = document.createElement('button');
+        btnExportar.textContent = '⬇ Exportar ▾';
+        btnExportar.style.cssText = 'width:100%;cursor:pointer;padding:4px;';
+        exportWrapper.appendChild(btnExportar);
+
+        const menuExport = document.createElement('div');
+        menuExport.style.cssText = 'display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ccc;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,.15);z-index:20;overflow:hidden;margin-top:2px;';
+
+        function criarItemMenu(texto) {
+            const item = document.createElement('div');
+            item.textContent = texto;
+            item.style.cssText = 'padding:6px 8px;cursor:pointer;font-size:11px;';
+            item.onmouseenter = () => { item.style.background = '#f0f0f0'; };
+            item.onmouseleave = () => { item.style.background = '#fff'; };
+            menuExport.appendChild(item);
+            return item;
+        }
+
+        const itemCopiar = criarItemMenu('📋 Copiar para a área de transferência');
+        const itemCSV = criarItemMenu('⬇ Ficheiro CSV');
+        const itemXLSX = criarItemMenu('⬇ Ficheiro Excel (.xls)');
+
+        exportWrapper.appendChild(menuExport);
+        barraAcoes.appendChild(exportWrapper);
+
+        btnExportar.onclick = (e) => {
+            e.stopPropagation();
+            menuExport.style.display = menuExport.style.display === 'none' ? 'block' : 'none';
+        };
+        document.addEventListener('click', () => { menuExport.style.display = 'none'; });
 
         const filtroLabel = document.createElement('label');
         filtroLabel.style.cssText = 'display:flex;align-items:center;gap:4px;margin-top:2px;cursor:pointer;';
@@ -255,6 +355,19 @@
         filtroLabel.appendChild(filtroCheckbox);
         filtroLabel.appendChild(document.createTextNode('Ocultar dias com 0 min'));
         barraAcoes.appendChild(filtroLabel);
+
+        // Link discreto para limpar a cache local
+        const limparCacheLink = document.createElement('a');
+        limparCacheLink.href = '#';
+        limparCacheLink.textContent = 'limpar cache local';
+        limparCacheLink.style.cssText = 'font-size:10px;color:#888;text-decoration:underline;cursor:pointer;align-self:flex-end;';
+        limparCacheLink.onclick = (e) => {
+            e.preventDefault();
+            limparCache();
+            limparCacheLink.textContent = 'cache limpa ✓';
+            setTimeout(() => { limparCacheLink.textContent = 'limpar cache local'; }, 1500);
+        };
+        barraAcoes.appendChild(limparCacheLink);
 
         // Indicador de Progresso
         const progressoDiv = document.createElement('div');
@@ -314,18 +427,57 @@
         let aCorrer = false;
         let pararPedido = false;
 
-        btnCopiar.onclick = () => {
-            // Respeita o filtro "Ocultar dias com 0 min" atualmente aplicado
+        // Aplica sempre o filtro atual ("ocultar 0 min") antes de exportar/copiar
+        function linhasFiltradas() {
             const esconderZero = filtroCheckbox.checked;
-            const linhas = resultados.filter(r => !(esconderZero && r.min === 0));
-            const csv = linhas.map(r => {
-                const minTxt = r.min === null ? 'erro' : r.min;
-                const hhmm = r.min === null ? '' : minutosParaHHMM(r.min);
-                return `${r.dia};${minTxt};${hhmm}`;
-            }).join('\n');
-            navigator.clipboard.writeText('dia;minutos;hh:mm\n' + csv);
-            btnCopiar.textContent = '✅ Copiado!';
-            setTimeout(() => { btnCopiar.textContent = '📋 Copiar resultados'; }, 1500);
+            return resultados.filter(r => !(esconderZero && r.min === 0));
+        }
+        function linhaParaColunas(r) {
+            const minTxt = r.min === null ? 'erro' : r.min;
+            const hhmm = r.min === null ? '' : minutosParaHHMM(r.min);
+            return [r.dia, minTxt, hhmm];
+        }
+        function gerarCSV(linhas) {
+            return 'dia;minutos;hh:mm\n' + linhas.map(r => linhaParaColunas(r).join(';')).join('\n');
+        }
+
+        itemCopiar.onclick = () => {
+            const linhas = linhasFiltradas();
+            navigator.clipboard.writeText(gerarCSV(linhas));
+            const textoOriginal = itemCopiar.textContent;
+            itemCopiar.textContent = '✅ Copiado!';
+            setTimeout(() => { itemCopiar.textContent = textoOriginal; }, 1500);
+            menuExport.style.display = 'none';
+        };
+
+        itemCSV.onclick = () => {
+            const linhas = linhasFiltradas();
+            const csv = gerarCSV(linhas);
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `minutos_${formatDateFicheiro(new Date())}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            menuExport.style.display = 'none';
+        };
+
+        itemXLSX.onclick = () => {
+            menuExport.style.display = 'none';
+            try {
+                const linhas = linhasFiltradas();
+                const xml = gerarXLS(linhas);
+                const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `minutos_${formatDateFicheiro(new Date())}.xls`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                alert('Não foi possível gerar o ficheiro Excel: ' + e.message);
+            }
         };
 
         async function correrBusca() {
@@ -340,15 +492,27 @@
             btnParar.textContent = '⏹ Parar';
             progressoDiv.style.display = 'block';
 
+            const cache = obterCache();
             let count = 0;
             for (const d of dias) {
                 if (pararPedido) break;
                 count++;
-                progressoDiv.textContent = `A consultar: ${count} de ${NUM_DIAS} dias...`;
                 const diaStr = formatDate(d);
+                progressoDiv.textContent = `A verificar: ${count} de ${NUM_DIAS} dias...`;
+
+                if (Object.prototype.hasOwnProperty.call(cache, diaStr)) {
+                    // Dia já conhecido -> não gasta pedido nem pausa
+                    resultados.push({ dia: diaStr, min: cache[diaStr] });
+                    tabelaContainer.innerHTML = renderTabela(resultados, filtroCheckbox.checked);
+                    atualizarTotais(resultados);
+                    continue;
+                }
+
                 try {
                     const min = await minutosDoDia(diaStr, cfgAtual);
                     resultados.push({ dia: diaStr, min });
+                    cache[diaStr] = min;
+                    guardarCache(cache);
                 } catch (e) {
                     resultados.push({ dia: diaStr, min: null, erro: e.message, rawResponse: e.rawResponse });
                 }
