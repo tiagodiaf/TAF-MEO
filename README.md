@@ -51,6 +51,11 @@ Permite fácilmente obter uma tabela com os minutos a mais nos ultimos 90 dias
 
 ---
 
+### 5. Nemesis - Criar orçamento automaticamente
+Permite criar o orçamento automaticamente quando não existe
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis_criar_orcamento.user.js)**
+
+---
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
