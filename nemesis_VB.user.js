@@ -1,23 +1,22 @@
 // ==UserScript==
 // @name         Nemesis VB – Viabilidade
 // @namespace    tiago.nemesis.vb
-// @version      1.2.0
+// @version      1.3.0
 // @description  Automatiza o fluxo de viabilidade (ORAP/ORAC): pesquisa, orçamento, recolha e resposta final
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
 // @noframes
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (() => {
   'use strict';
   if (window.top !== window.self) return;
 
-  /* ───────────── Configuração (editar aqui) ───────────── */
+  /* ───────────── Configuração global (igual para todos) ───────────── */
   const CFG = {
-    brigada: '27/6785',
-    nmec: '75086',
-    qtd: '1',
     tarefas: { ORAP: 'PJ0203', ORAC: 'PJ0201' },
     respostaValor: '2569',            // "Projeto elaborado (O)"
     descricaoOrcamento: 'Orçamento',
@@ -37,9 +36,16 @@
     'Responder à ordem',
     'Confirmar a transição',
   ];
-  // "Continuar": assume o passo atual como feito à mão e segue para o seguinte
   const NEXT = { pesquisa: 'detalhe', detalhe: 'lista', lista: 'recolha', recolha: 'resposta', resposta: 'fim' };
   const PROG = { detalhe: 0, lista: 1, recolha: 3, resposta: 4, fim: 5 };
+
+  /* ───────────── Definições por utilizador (guardadas uma vez) ───────────── */
+  const user = () => ({
+    brigada: String(GM_getValue('brigada', '') || '').trim(),
+    nmec: String(GM_getValue('nmec', '') || '').trim(),
+    qtd: String(GM_getValue('qtd', '1') || '1').trim(),
+  });
+  const configurado = () => { const u = user(); return !!(u.brigada && u.nmec); };
 
   /* ───────────── Página atual ───────────── */
   const P = location.pathname;
@@ -48,7 +54,7 @@
   const isLista = /Orcamentos_List\.aspx/i.test(P);
   const isRecolhas = /Recolhas_List\.aspx/i.test(P);
 
-  /* ───────────── Estado (partilhado entre páginas) ───────────── */
+  /* ───────────── Estado do fluxo (partilhado entre páginas) ───────────── */
   const load = () => {
     try {
       const s = JSON.parse(localStorage.getItem(CFG.stateKey) || 'null');
@@ -90,10 +96,11 @@
       };
     } catch (e) { /* ignorar */ }
   }
-  track(window);
+  const pageWin = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  track(pageWin);
 
   // Espera até não haver pedidos pendentes durante um curto período contínuo
-  async function waitIdle(win = window, quiet = 350) {
+  async function waitIdle(win = pageWin, quiet = 350) {
     const t0 = Date.now();
     let since = null;
     for (;;) {
@@ -191,6 +198,8 @@
   }
 
   async function passoRecolha(s) {
+    const u = user();
+    if (!u.brigada || !u.nmec) throw new Error('Falta configurar a brigada e o nº mecânico (ícone ⚙ do painel).');
     patch({ prog: 3, nota: 'A preencher a recolha…' });
     await waitIdle();
     const g = (id) => document.getElementById(id);
@@ -208,10 +217,10 @@
 
     const campos = [
       ['wtWBAddTarefas_wtInputTarefa', s.tarefa],
-      ['wtWBAddTarefas_wtRecolha_Brigada', CFG.brigada],
-      ['wtWBAddTarefas_wtRecolha_Nmec', CFG.nmec],
+      ['wtWBAddTarefas_wtRecolha_Brigada', u.brigada],
+      ['wtWBAddTarefas_wtRecolha_Nmec', u.nmec],
       ['wtWBAddTarefas_wtRecolha_DataSP', hoje()],
-      ['wtWBAddTarefas_wtRecolha_Qtd', CFG.qtd],
+      ['wtWBAddTarefas_wtRecolha_Qtd', u.qtd],
     ];
     for (const [id, v] of campos) {
       const el = await waitFor(() => g(id), 'o campo ' + id);
@@ -336,7 +345,6 @@
     const next = NEXT[s.step];
     if (!next) { patch({ erro: null }); run(); return; }
     patch({ erro: null, step: next, prog: PROG[next] ?? s.prog, nota: 'A continuar (passo anterior feito à mão)…' });
-    // Se não estivermos na página certa para o próximo passo, navega
     const id = s.ordemId;
     if (next === 'lista' && id && !isLista) { location.href = urlLista(id); return; }
     if (next === 'recolha' && id && !isLista && !isRecolhas) { location.href = urlLista(id); return; }
@@ -345,20 +353,23 @@
   }
 
   /* ───────────── Interface ───────────── */
+  const FAB = 54;
   const CSS = `
     :host{all:initial}
     *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
-    .fab{position:fixed;right:20px;bottom:20px;z-index:2147483647;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;
+    .fab{position:fixed;left:0;top:0;z-index:2147483647;width:${FAB}px;height:${FAB}px;border-radius:50%;border:0;cursor:grab;touch-action:none;user-select:none;
       background:#1f4fd8;color:#fff;font-weight:800;font-size:16px;letter-spacing:.5px;box-shadow:0 6px 18px rgba(31,79,216,.4)}
+    .fab.drag{cursor:grabbing;opacity:.85}
     .fab:hover{background:#1a43b8}.fab:focus-visible,.btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid #9db6ff;outline-offset:2px}
     .fab[data-s=run]{box-shadow:0 0 0 4px rgba(31,79,216,.25),0 6px 18px rgba(31,79,216,.4)}
     .fab[data-s=err]{background:#c0392b}.fab[data-s=ok]{background:#17825D}
-    .panel{position:fixed;right:20px;bottom:84px;z-index:2147483647;width:340px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
+    .panel{position:fixed;left:0;top:0;z-index:2147483647;width:340px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
       border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.22);font-size:14px}
     .panel[hidden]{display:none}
     header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #e6e9ef;background:#f3f5f8;border-radius:12px 12px 0 0}
     header strong{font-size:15px}header .sub{color:#667085;font-size:12px;flex:1}
     .x{border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#667085}
+    .x.gear{font-size:16px}
     .body{padding:14px}
     .lbl{display:block;font-weight:600;margin:12px 0 6px}.lbl:first-child{margin-top:0}
     .inp{width:100%;padding:9px 10px;border:1px solid #c5ccd8;border-radius:8px;font-size:14px}
@@ -387,7 +398,7 @@
     .err{padding:10px;background:#fdecea;border:1px solid #f3b8b1;border-radius:8px;color:#8f2a20;font-size:13px;word-break:break-word}
     .okbox{padding:10px;background:#e8f6ef;border:1px solid #a9dcc2;border-radius:8px;color:#0f5a40;font-size:13px}
     dl{margin:0}dt{font-weight:600;margin-top:8px}dd{margin:2px 0 0;word-break:break-word}
-    @media (max-width:420px){.panel{right:8px;left:8px;width:auto}}
+    @media (max-width:420px){.panel{width:calc(100vw - 16px)}}
   `;
 
   const host = document.createElement('div');
@@ -395,21 +406,72 @@
   document.documentElement.appendChild(host);
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
-    <button class="fab" title="Viabilidade (VB)">VB</button>
+    <button class="fab" title="Viabilidade (arrasta para mover)">VB</button>
     <section class="panel" hidden>
-      <header><strong>Viabilidade</strong><span class="sub">Nemesis</span><button class="x" aria-label="Fechar">×</button></header>
+      <header><strong>Viabilidade</strong><span class="sub">Nemesis</span>
+        <button class="x gear" id="gear" title="Definições" aria-label="Definições">⚙</button>
+        <button class="x" id="close" aria-label="Fechar">×</button></header>
       <div class="body"></div>
     </section>`;
   const $ = (sel, el = root) => el.querySelector(sel);
   const fab = $('.fab'), panel = $('.panel'), body = $('.body');
 
-  let aberto = !!load();
+  let aberto = !!load() || (isTarefas && !configurado());
+  let emConfig = !configurado();
   let lastView = null, lastKey = '';
   let pendingConfirm = null;
   const draft = { ordem: '', obsTipo: OBS_OPCOES[0], obsTexto: '' };
 
-  fab.addEventListener('click', () => { aberto = !aberto; render(); });
-  $('.x').addEventListener('click', () => { aberto = false; render(); });
+  /* ── Posição do botão flutuante (guardada) ── */
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  let fabX = GM_getValue('fabX', null), fabY = GM_getValue('fabY', null);
+  function posFab() {
+    if (fabX === null || fabY === null) { fabX = window.innerWidth - FAB - 20; fabY = window.innerHeight - FAB - 20; }
+    fabX = clamp(fabX, 0, Math.max(0, window.innerWidth - FAB));
+    fabY = clamp(fabY, 0, Math.max(0, window.innerHeight - FAB));
+    fab.style.left = fabX + 'px';
+    fab.style.top = fabY + 'px';
+  }
+  function placePanel() {
+    if (panel.hidden) return;
+    const pw = panel.offsetWidth, ph = panel.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = clamp(fabX + FAB - pw, 8, Math.max(8, vw - pw - 8));
+    let top = fabY - ph - 10;
+    if (top < 8) top = fabY + FAB + 10;
+    top = clamp(top, 8, Math.max(8, vh - ph - 8));
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+  }
+
+  let drag = null;
+  fab.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    drag = { sx: e.clientX, sy: e.clientY, x0: fabX, y0: fabY, moved: false };
+    fab.setPointerCapture(e.pointerId);
+  });
+  fab.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (!drag.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+    drag.moved = true;
+    fab.classList.add('drag');
+    fabX = drag.x0 + dx; fabY = drag.y0 + dy;
+    posFab(); placePanel();
+  });
+  fab.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    fab.classList.remove('drag');
+    try { fab.releasePointerCapture(e.pointerId); } catch (_) { /* ignorar */ }
+    if (moved) { GM_setValue('fabX', fabX); GM_setValue('fabY', fabY); }
+    else { aberto = !aberto; render(); }
+  });
+  window.addEventListener('resize', () => { posFab(); placePanel(); });
+
+  $('#close').addEventListener('click', () => { aberto = false; render(); });
+  $('#gear').addEventListener('click', () => { emConfig = !emConfig; lastKey = ''; render(); });
   window.addEventListener('storage', (e) => { if (e.key === CFG.stateKey) { lastKey = ''; render(); } });
 
   function confirmar(resumo) {
@@ -417,17 +479,23 @@
   }
 
   function render() {
+    renderInner();
+    placePanel();
+  }
+
+  function renderInner() {
     const s = load();
     host.style.display = (isTarefas || s) ? '' : 'none';
     panel.hidden = !aberto;
-    const v = pendingConfirm ? 'confirm' : !s ? 'form' : s.erro ? 'erro' : s.step === 'concluido' ? 'done' : 'run';
+    const v = pendingConfirm ? 'confirm' : emConfig ? 'config' : !s ? 'form' : s.erro ? 'erro' : s.step === 'concluido' ? 'done' : 'run';
     fab.dataset.s = v === 'run' || v === 'confirm' ? 'run' : v === 'erro' ? 'err' : v === 'done' ? 'ok' : '';
-    if (v === 'form' && lastView === 'form') return;
+    if ((v === 'form' || v === 'config') && lastView === v) return;
     const key = v + (s ? `${s.prog}|${s.nota}|${s.erro || ''}` : '');
     if (key === lastKey) return;
     lastKey = key; lastView = v;
     body.replaceChildren();
     if (v === 'form') viewForm();
+    else if (v === 'config') viewConfig();
     else if (v === 'confirm') viewConfirm();
     else if (v === 'erro') viewErro(s);
     else if (v === 'done') viewDone(s);
@@ -436,8 +504,46 @@
 
   function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 
-  function viewForm() {
+  function viewConfig() {
+    const ja = configurado();
     body.append(el(`<div>
+      <div class="lbl">Definições pessoais</div>
+      <div class="nota" style="margin-top:0">Configura uma só vez. Ficam guardadas neste browser e usam-se em todas as recolhas.</div>
+      <label class="lbl" for="c-brig">Brigada</label>
+      <input id="c-brig" class="inp mono" placeholder="ex: 27/6785" autocomplete="off" spellcheck="false">
+      <label class="lbl" for="c-nmec">Número mecânico</label>
+      <input id="c-nmec" class="inp mono" placeholder="ex: 75086" autocomplete="off" spellcheck="false">
+      <label class="lbl" for="c-qtd">Quantidade por recolha</label>
+      <input id="c-qtd" class="inp mono" type="number" min="1" step="1">
+      <div class="info bad" id="cerr"></div>
+      <div class="row">
+        ${ja ? '<button class="btn ghost" id="cback">Voltar</button>' : ''}
+        <button class="btn primary" id="csave">Guardar</button>
+      </div>
+    </div>`));
+    const u = user();
+    $('#c-brig').value = u.brigada;
+    $('#c-nmec').value = u.nmec;
+    $('#c-qtd').value = u.qtd || '1';
+    const sair = () => { emConfig = false; lastView = null; lastKey = ''; render(); };
+    if (ja) $('#cback').addEventListener('click', sair);
+    $('#csave').addEventListener('click', () => {
+      const b = $('#c-brig').value.trim(), n = $('#c-nmec').value.trim(), q = $('#c-qtd').value.trim();
+      const err = $('#cerr');
+      if (!b) { err.textContent = 'Indica a brigada.'; return; }
+      if (!n) { err.textContent = 'Indica o número mecânico.'; return; }
+      if (!/^[1-9]\d*$/.test(q)) { err.textContent = 'A quantidade tem de ser um número inteiro (1 ou mais).'; return; }
+      GM_setValue('brigada', b);
+      GM_setValue('nmec', n);
+      GM_setValue('qtd', q);
+      sair();
+    });
+  }
+
+  function viewForm() {
+    const u = user();
+    body.append(el(`<div>
+      <div class="tag" id="quem"></div>
       <label class="lbl" for="ordem">Número da ordem</label>
       <input id="ordem" class="inp mono" placeholder="26VB_ORAP_083614" autocomplete="off" spellcheck="false">
       <div class="info" id="info"></div>
@@ -452,6 +558,7 @@
       </div>
       <button class="btn primary" id="go" disabled>Iniciar viabilidade</button>
     </div>`));
+    $('#quem').textContent = `Brigada ${u.brigada} · Mec. ${u.nmec}`;
     const ordem = $('#ordem'), info = $('#info'), livre = $('#livre'), txt = $('#txt'), go = $('#go');
     ordem.value = draft.ordem; txt.value = draft.obsTexto; $('#n').textContent = txt.value.length;
     root.querySelectorAll('input[name=obs]').forEach((r) => { r.checked = r.value === draft.obsTipo; });
@@ -469,12 +576,14 @@
       info.textContent = p ? `${p.tipo} · tarefa ${p.tarefa}` : raw ? 'Formato esperado: 26VB_ORAP_083614 (ORAP ou ORAC)' : '';
       livre.hidden = draft.obsTipo !== '__outro';
       go.disabled = !(p && obsFinal());
+      placePanel();
     };
     ordem.addEventListener('input', () => { ordem.value = ordem.value.toUpperCase(); draft.ordem = ordem.value; refresh(); });
     root.querySelectorAll('input[name=obs]').forEach((r) => r.addEventListener('change', () => { draft.obsTipo = r.value; refresh(); if (r.value === '__outro') txt.focus(); }));
     txt.addEventListener('input', () => { draft.obsTexto = txt.value; $('#n').textContent = txt.value.length; refresh(); });
     go.addEventListener('click', () => {
       const p = parse(); if (!p) return;
+      if (!configurado()) { emConfig = true; lastKey = ''; render(); return; }
       save({ ...p, obs: obsFinal(), step: 'pesquisa', prog: 0, nota: 'A iniciar…' });
       aberto = true;
       run();
@@ -527,6 +636,7 @@
     $('#nova').addEventListener('click', clear);
   }
 
+  posFab();
   render();
   run();
 })();
