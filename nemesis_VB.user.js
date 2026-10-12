@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis VB – Viabilidade
 // @namespace    tiago.nemesis.vb
-// @version      1.3.0
+// @version      1.4.1
 // @description  Automatiza o fluxo de viabilidade (ORAP/ORAC): pesquisa, orçamento, recolha e resposta final
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -21,7 +21,7 @@
     respostaValor: '2569',            // "Projeto elaborado (O)"
     descricaoOrcamento: 'Orçamento',
     obsMax: 200,
-    confirmarSel: '',                 // seletor (dentro do popup) do botão que confirma a resposta. Vazio = deteção automática
+    confirmarSel: '#wt24',            // botão "Gravar" do popup de resposta. Se não existir, usa a deteção automática
     abrirTarefasSel: 'img[src*="recolha_tarefas_seleccao_branco.png"]', // o "T" que abre o formulário de tarefas
     timeout: 120000,
     stateKey: 'vb_state_v1',
@@ -125,7 +125,41 @@
     }
     return null;
   }
-  const frameComUrl = (parte) => [...document.querySelectorAll('iframe')].some((f) => (f.src || '').includes(parte));
+
+  // Todos os documentos (página + iframes, incluindo aninhados)
+  function allDocs(root = document, out = []) {
+    out.push(root);
+    for (const f of root.querySelectorAll('iframe')) {
+      try { const d = f.contentDocument; if (d) allDocs(d, out); } catch (e) { /* ignorar */ }
+    }
+    return out;
+  }
+
+  // Popup "Gerar Relatório": devolve o botão "Não" (só se "Sim" e "Não" estiverem visíveis juntos)
+  function botaoNao() {
+    const txt = (b) => (b.value || b.textContent || '').trim();
+    for (const d of allDocs()) {
+      const btns = [...d.querySelectorAll('input[type=submit],input[type=button],button,a.BotaoNemesis')]
+        .filter((b) => b.offsetParent !== null);
+      const sim = btns.find((b) => /^sim$/i.test(txt(b)));
+      const nao = btns.find((b) => /^n[ãa]o$/i.test(txt(b)));
+      if (sim && nao) return nao;
+    }
+    return null;
+  }
+
+  // Popup "Documentos sugeridos": devolve o botão "Continuar" (só se "Fazer upload" e "Continuar" estiverem visíveis juntos)
+  function botaoContinuar() {
+    const txt = (b) => (b.value || b.textContent || '').trim();
+    for (const d of allDocs()) {
+      const btns = [...d.querySelectorAll('input[type=submit],input[type=button],button,a.BotaoNemesis')]
+        .filter((b) => b.offsetParent !== null);
+      const upload = btns.find((b) => /^fazer upload$/i.test(txt(b)));
+      const cont = btns.find((b) => /^continuar$/i.test(txt(b)));
+      if (upload && cont) return cont;
+    }
+    return null;
+  }
 
   function setVal(el, v, evts = ['input', 'change']) {
     const W = el.ownerDocument.defaultView;
@@ -250,11 +284,17 @@
     location.href = urlDetalhe(s.ordemId);
   }
 
+  // Botão que confirma o popup de resposta: seletor configurado e, se não existir, deteção por texto
   function botaoConfirmar(doc) {
-    if (CFG.confirmarSel) return doc.querySelector(CFG.confirmarSel);
+    if (CFG.confirmarSel) {
+      const b = doc.querySelector(CFG.confirmarSel);
+      if (b) return b;
+    }
+    const vis = (b) => b.offsetParent !== null && !/\bInvisible\b/.test(b.className);
+    const txt = (b) => (b.value || b.textContent || '').trim();
     const c = [...doc.querySelectorAll('input[type=submit],input[type=button],button,a.BotaoNemesis')]
-      .filter((b) => /^(submeter|gravar|confirmar|guardar|enviar|ok)\b/i.test((b.value || b.textContent || '').trim()));
-    return c.length === 1 ? c[0] : null;
+      .filter((b) => vis(b) && /^(submeter|gravar|confirmar|guardar|enviar|ok)\b/i.test(txt(b)));
+    return c.find((b) => /^gravar$/i.test(txt(b))) || (c.length === 1 ? c[0] : null);
   }
   const listaBotoes = (doc) => [...doc.querySelectorAll('input[type=submit],input[type=button],button,a.BotaoNemesis')]
     .map((b) => `${b.id || '(sem id)'}: "${(b.value || b.textContent || '').trim()}"`).join(' | ');
@@ -286,20 +326,38 @@
       throw new Error('Não consegui identificar o botão que confirma o popup. Botões encontrados: ' + listaBotoes(f.doc));
     });
 
-    const ok = await confirmar({
-      Ordem: s.ordem,
-      Resposta: sel.options[sel.selectedIndex].text,
-      Observações: s.obs,
-    });
-    if (!ok) { clear(); return; }
+    // Confirmação manual (opcional)
+    if (s.confirmar !== false) {
+      const ok = await confirmar({
+        Ordem: s.ordem,
+        Resposta: sel.options[sel.selectedIndex].text,
+        Observações: s.obs,
+      });
+      if (!ok) { clear(); return; }
+    }
 
     patch({ step: 'fim', prog: 5, nota: 'A submeter a resposta…' });
     conf.click();
-    let avisado = false;
+
+    let naoClicado = false, contClicado = false;
     await waitFor(() => {
-      if (!avisado && frameComUrl('WFDocumentosMandatory')) {
-        avisado = true;
-        patch({ nota: 'Abriu o popup de documentos obrigatórios. Trata aí; continuo quando a página mudar.' });
+      // Popup "Gerar Relatório": responde "Não"
+      if (!naoClicado) {
+        const nao = botaoNao();
+        if (nao) {
+          naoClicado = true;
+          nao.click();
+          patch({ nota: 'Popup "Gerar Relatório": cliquei em Não.' });
+        }
+      }
+      // Popup "Documentos sugeridos": clica em "Continuar"
+      if (!contClicado) {
+        const c = botaoContinuar();
+        if (c) {
+          contClicado = true;
+          c.click();
+          patch({ nota: 'Popup "Documentos sugeridos": cliquei em Continuar.' });
+        }
       }
       return false;
     }, 'a transição da ordem', 600000);
@@ -379,6 +437,8 @@
     .chip span{display:inline-block;padding:6px 11px;border:1px solid #c5ccd8;border-radius:999px;cursor:pointer;font-size:13px;background:#fff}
     .chip input:checked+span{background:#1f4fd8;border-color:#1f4fd8;color:#fff}
     .chip input:focus-visible+span{outline:3px solid #9db6ff}
+    .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;color:#17202a}
+    .chk input{width:16px;height:16px;cursor:pointer}
     textarea{width:100%;margin-top:8px;padding:9px 10px;border:1px solid #c5ccd8;border-radius:8px;font-size:14px;resize:vertical}
     .cnt{text-align:right;font-size:12px;color:#667085}
     .btn{width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid #c5ccd8;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
@@ -545,7 +605,7 @@
     body.append(el(`<div>
       <div class="tag" id="quem"></div>
       <label class="lbl" for="ordem">Número da ordem</label>
-      <input id="ordem" class="inp mono" placeholder="26VB_ORAP_083614" autocomplete="off" spellcheck="false">
+      <input id="ordem" class="inp mono" placeholder="26VB_ORAP_xxxxx" autocomplete="off" spellcheck="false">
       <div class="info" id="info"></div>
       <div class="lbl">Observações da resposta</div>
       <div class="chips" role="radiogroup">
@@ -556,11 +616,14 @@
         <textarea id="txt" rows="3" maxlength="${CFG.obsMax}" placeholder="Escreve a observação"></textarea>
         <div class="cnt"><span id="n">0</span>/${CFG.obsMax}</div>
       </div>
+      <label class="chk"><input type="checkbox" id="pedir"><span>Confirmar antes de enviar a resposta</span></label>
       <button class="btn primary" id="go" disabled>Iniciar viabilidade</button>
     </div>`));
     $('#quem').textContent = `Brigada ${u.brigada} · Mec. ${u.nmec}`;
-    const ordem = $('#ordem'), info = $('#info'), livre = $('#livre'), txt = $('#txt'), go = $('#go');
+    const ordem = $('#ordem'), info = $('#info'), livre = $('#livre'), txt = $('#txt'), go = $('#go'), pedir = $('#pedir');
     ordem.value = draft.ordem; txt.value = draft.obsTexto; $('#n').textContent = txt.value.length;
+    pedir.checked = GM_getValue('confirmarAntes', true) !== false;
+    pedir.addEventListener('change', () => GM_setValue('confirmarAntes', pedir.checked));
     root.querySelectorAll('input[name=obs]').forEach((r) => { r.checked = r.value === draft.obsTipo; });
 
     const parse = () => {
@@ -584,7 +647,7 @@
     go.addEventListener('click', () => {
       const p = parse(); if (!p) return;
       if (!configurado()) { emConfig = true; lastKey = ''; render(); return; }
-      save({ ...p, obs: obsFinal(), step: 'pesquisa', prog: 0, nota: 'A iniciar…' });
+      save({ ...p, obs: obsFinal(), confirmar: pedir.checked, step: 'pesquisa', prog: 0, nota: 'A iniciar…' });
       aberto = true;
       run();
     });
