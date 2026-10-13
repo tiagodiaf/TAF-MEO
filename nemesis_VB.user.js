@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis VB – Viabilidade
 // @namespace    tiago.nemesis.vb
-// @version      1.4.1
+// @version      1.5.1
 // @description  Automatiza o fluxo de viabilidade (ORAP/ORAC): pesquisa, orçamento, recolha e resposta final
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -410,17 +410,79 @@
     run();
   }
 
+  /* ───────────── Barra partilhada (VB + CAD) ───────────── */
+  // Os separadores dos dois scripts ficam lado a lado numa barra única. Arrasta-se pela pega ⋮⋮ (duplo clique repõe a posição).
+  const DOCK_KEY = 'nemesis_dock_pos_v1';
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  function getDock() {
+    let d = document.getElementById('nemesis-dock');
+    if (d) return d;
+    d = document.createElement('div');
+    d.id = 'nemesis-dock';
+    const r = d.attachShadow({ mode: 'open' });
+    r.innerHTML = `<style>
+      :host{all:initial;position:fixed;z-index:2147483647;display:flex;align-items:flex-end;gap:4px;right:110px;bottom:0}
+      .grip{width:18px;height:32px;display:flex;align-items:center;justify-content:center;background:#1f2937;color:#9ca3af;border-radius:10px 10px 0 0;
+        font:700 12px/1 "Segoe UI",system-ui,sans-serif;letter-spacing:-2px;cursor:grab;touch-action:none;user-select:none}
+      .grip.drag{cursor:grabbing}
+    </style><div class="grip" title="Arrastar (duplo clique repõe a posição)">⋮⋮</div><slot></slot>`;
+    const grip = r.querySelector('.grip');
+    let cur = null, g = null;
+    const guardada = () => { try { return JSON.parse(localStorage.getItem(DOCK_KEY) || 'null'); } catch (e) { return null; } };
+    const setPos = (x, y) => {
+      cur = {
+        x: clamp(x, 0, Math.max(0, window.innerWidth - d.offsetWidth)),
+        y: clamp(y, 0, Math.max(0, window.innerHeight - d.offsetHeight)),
+      };
+      d.style.left = cur.x + 'px'; d.style.top = cur.y + 'px'; d.style.right = 'auto'; d.style.bottom = 'auto';
+    };
+    const place = () => {
+      const p = guardada();
+      if (p && typeof p.x === 'number' && typeof p.y === 'number') setPos(p.x, p.y);
+      else { d.style.left = ''; d.style.top = ''; d.style.right = ''; d.style.bottom = ''; }
+    };
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      const b = d.getBoundingClientRect();
+      g = { sx: e.clientX, sy: e.clientY, x0: b.left, y0: b.top };
+      grip.setPointerCapture(e.pointerId);
+      grip.classList.add('drag');
+    });
+    grip.addEventListener('pointermove', (e) => { if (g) setPos(g.x0 + e.clientX - g.sx, g.y0 + e.clientY - g.sy); });
+    grip.addEventListener('pointerup', (e) => {
+      if (!g) return;
+      g = null;
+      grip.classList.remove('drag');
+      try { grip.releasePointerCapture(e.pointerId); } catch (_) { /* ignorar */ }
+      if (cur) { try { localStorage.setItem(DOCK_KEY, JSON.stringify(cur)); } catch (_) { /* ignorar */ } }
+    });
+    grip.addEventListener('dblclick', () => { try { localStorage.removeItem(DOCK_KEY); } catch (_) { /* ignorar */ } place(); });
+    document.documentElement.appendChild(d);
+    place();
+    window.addEventListener('resize', place);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(place).observe(d);
+    return d;
+  }
+  const dock = getDock();
+  // Esconde a barra quando nenhum separador está visível
+  const dockSync = () => {
+    const algum = [...dock.children].some((c) => c.style.display !== 'none');
+    dock.style.visibility = algum ? '' : 'hidden';
+  };
+
   /* ───────────── Interface ───────────── */
-  const FAB = 54;
   const CSS = `
-    :host{all:initial}
+    :host{all:initial;display:block}
     *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
-    .fab{position:fixed;left:0;top:0;z-index:2147483647;width:${FAB}px;height:${FAB}px;border-radius:50%;border:0;cursor:grab;touch-action:none;user-select:none;
-      background:#1f4fd8;color:#fff;font-weight:800;font-size:16px;letter-spacing:.5px;box-shadow:0 6px 18px rgba(31,79,216,.4)}
-    .fab.drag{cursor:grabbing;opacity:.85}
-    .fab:hover{background:#1a43b8}.fab:focus-visible,.btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid #9db6ff;outline-offset:2px}
-    .fab[data-s=run]{box-shadow:0 0 0 4px rgba(31,79,216,.25),0 6px 18px rgba(31,79,216,.4)}
-    .fab[data-s=err]{background:#c0392b}.fab[data-s=ok]{background:#17825D}
+    .fab{display:block;height:32px;padding:0 16px;border:0;border-radius:10px 10px 0 0;cursor:pointer;user-select:none;white-space:nowrap;
+      background:#1f4fd8;color:#fff;font-weight:700;font-size:13px;box-shadow:0 -2px 10px rgba(31,79,216,.35)}
+    .fab small{font-size:10px;font-weight:600;opacity:.75;margin-left:7px}
+    .fab:hover{background:#1a43b8}
+    .fab:focus-visible,.btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid #9db6ff;outline-offset:2px}
+    .fab[data-s=run]::before{content:"";display:inline-block;width:9px;height:9px;margin-right:7px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;vertical-align:-1px;animation:g 1s linear infinite}
+    .fab[data-s=err]{background:#c0392b}.fab[data-s=err]::before{content:"!";margin-right:7px}
+    .fab[data-s=ok]{background:#17825D}.fab[data-s=ok]::before{content:"✓";margin-right:7px}
+    @media (prefers-reduced-motion:reduce){.fab[data-s=run]::before{animation:none}}
     .panel{position:fixed;left:0;top:0;z-index:2147483647;width:340px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
       border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.22);font-size:14px}
     .panel[hidden]{display:none}
@@ -463,12 +525,14 @@
 
   const host = document.createElement('div');
   host.id = 'vb-host';
-  document.documentElement.appendChild(host);
+  host.className = 'nm-tab';
+  host.style.order = '1';
+  dock.appendChild(host);
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
-    <button class="fab" title="Viabilidade (arrasta para mover)">VB</button>
+    <button class="fab" title="Viabilidade v1.5.1">Viabilidade<small>v1.5.1</small></button>
     <section class="panel" hidden>
-      <header><strong>Viabilidade</strong><span class="sub">Nemesis</span>
+      <header><strong>Viabilidade</strong><span class="sub">Nemesis · v1.5.1</span>
         <button class="x gear" id="gear" title="Definições" aria-label="Definições">⚙</button>
         <button class="x" id="close" aria-label="Fechar">×</button></header>
       <div class="body"></div>
@@ -482,60 +546,39 @@
   let pendingConfirm = null;
   const draft = { ordem: '', obsTipo: OBS_OPCOES[0], obsTexto: '' };
 
-  /* ── Posição do botão flutuante (guardada) ── */
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  let fabX = GM_getValue('fabX', null), fabY = GM_getValue('fabY', null);
-  function posFab() {
-    if (fabX === null || fabY === null) { fabX = window.innerWidth - FAB - 20; fabY = window.innerHeight - FAB - 20; }
-    fabX = clamp(fabX, 0, Math.max(0, window.innerWidth - FAB));
-    fabY = clamp(fabY, 0, Math.max(0, window.innerHeight - FAB));
-    fab.style.left = fabX + 'px';
-    fab.style.top = fabY + 'px';
-  }
+  // Só um painel aberto de cada vez: quem abre anuncia na barra e o outro script fecha o seu
+  const anunciar = () => { dock.dataset.open = 'vb:' + Date.now(); };
+  const setAberto = (v) => { aberto = v; if (v) anunciar(); render(); };
+  if (aberto) anunciar();
+
+  // O painel abre por cima do separador (ou por baixo, se não houver espaço)
   function placePanel() {
     if (panel.hidden) return;
+    const r = fab.getBoundingClientRect();
     const pw = panel.offsetWidth, ph = panel.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
-    let left = clamp(fabX + FAB - pw, 8, Math.max(8, vw - pw - 8));
-    let top = fabY - ph - 10;
-    if (top < 8) top = fabY + FAB + 10;
+    const left = clamp(r.right - pw, 8, Math.max(8, vw - pw - 8));
+    let top = r.top - ph - 8;
+    if (top < 8) top = r.bottom + 8;
     top = clamp(top, 8, Math.max(8, vh - ph - 8));
     panel.style.left = left + 'px';
     panel.style.top = top + 'px';
   }
 
-  let drag = null;
-  fab.addEventListener('pointerdown', (e) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    drag = { sx: e.clientX, sy: e.clientY, x0: fabX, y0: fabY, moved: false };
-    fab.setPointerCapture(e.pointerId);
-  });
-  fab.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
-    if (!drag.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-    drag.moved = true;
-    fab.classList.add('drag');
-    fabX = drag.x0 + dx; fabY = drag.y0 + dy;
-    posFab(); placePanel();
-  });
-  fab.addEventListener('pointerup', (e) => {
-    if (!drag) return;
-    const moved = drag.moved;
-    drag = null;
-    fab.classList.remove('drag');
-    try { fab.releasePointerCapture(e.pointerId); } catch (_) { /* ignorar */ }
-    if (moved) { GM_setValue('fabX', fabX); GM_setValue('fabY', fabY); }
-    else { aberto = !aberto; render(); }
-  });
-  window.addEventListener('resize', () => { posFab(); placePanel(); });
+  fab.addEventListener('click', () => setAberto(!aberto));
+  window.addEventListener('resize', placePanel);
+  // Reposiciona o painel quando a barra se mexe e fecha-o se o outro script abriu o dele
+  new MutationObserver(() => {
+    const quem = (dock.dataset.open || '').split(':')[0];
+    if (aberto && quem && quem !== 'vb') { aberto = false; render(); } else placePanel();
+  }).observe(dock, { attributes: true, attributeFilter: ['style', 'data-open'], subtree: true });
 
-  $('#close').addEventListener('click', () => { aberto = false; render(); });
+  $('#close').addEventListener('click', () => setAberto(false));
   $('#gear').addEventListener('click', () => { emConfig = !emConfig; lastKey = ''; render(); });
-  window.addEventListener('storage', (e) => { if (e.key === CFG.stateKey) { lastKey = ''; render(); } });
+  window.addEventListener('storage', (e) => { if (e.key === CFG.stateKey || (CFG.reportKey && e.key === CFG.reportKey)) { lastKey = ''; render(); } });
 
   function confirmar(resumo) {
-    return new Promise((res) => { pendingConfirm = { resumo, res }; aberto = true; lastKey = ''; render(); });
+    return new Promise((res) => { pendingConfirm = { resumo, res }; lastKey = ''; setAberto(true); });
   }
 
   function render() {
@@ -546,6 +589,7 @@
   function renderInner() {
     const s = load();
     host.style.display = (isTarefas || s) ? '' : 'none';
+    dockSync();
     panel.hidden = !aberto;
     const v = pendingConfirm ? 'confirm' : emConfig ? 'config' : !s ? 'form' : s.erro ? 'erro' : s.step === 'concluido' ? 'done' : 'run';
     fab.dataset.s = v === 'run' || v === 'confirm' ? 'run' : v === 'erro' ? 'err' : v === 'done' ? 'ok' : '';
@@ -648,7 +692,7 @@
       const p = parse(); if (!p) return;
       if (!configurado()) { emConfig = true; lastKey = ''; render(); return; }
       save({ ...p, obs: obsFinal(), confirmar: pedir.checked, step: 'pesquisa', prog: 0, nota: 'A iniciar…' });
-      aberto = true;
+      setAberto(true);
       run();
     });
     refresh();
@@ -699,7 +743,6 @@
     $('#nova').addEventListener('click', clear);
   }
 
-  posFab();
   render();
   run();
 })();
