@@ -1,18 +1,23 @@
 // ==UserScript==
 // @name         BeOn RH - Minutos a Mais (90 dias)
 // @namespace    beonrh
-// @version      1.4
+// @version      1.6
 // @description  Mostra os minutos disponíveis por dia (últimos 90 dias, sem o dia de hoje), via erro do pedido de ausência. Com cache local e exportação CSV/XLS.
 // @match        https://apps.beontech.com/RH/*
 // @match        https://apps.beontech.com/rh/*
+// @match        https://web.beontech.com/sv/portalrh/*
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    const VERSION = '1.4';
-    const ENDPOINT = 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
+    const VERSION = '1.6';
+    // O endpoint depende do domínio onde a página está a correr (portal antigo vs. novo)
+    const ENDPOINT = location.hostname === 'web.beontech.com'
+        ? 'https://web.beontech.com/sv/portalrh/amigaui5rh/AmigaUI5Service.svc/executePRD'
+        : 'https://apps.beontech.com/amigaui5rh/AmigaUI5Service.svc/executePRD';
     const NUM_DIAS = 90;
     const PAUSA_MS = 350;
     const STORAGE_KEY = 'beonrh_minutos_config';
@@ -27,6 +32,40 @@
     const DEFAULTS = {
         FirmaServ: "",
         NSAP: ""
+    };
+
+    // --- Captura de login/token a partir dos pedidos do próprio portal ---
+    // (plano B caso window.login / window.loginToken não existam no novo portal).
+    // Os valores ficam apenas em memória, não são guardados nem enviados para lado nenhum.
+    const cred = { login: null, token: null };
+
+    function capturar(bodyStr) {
+        try {
+            const p = JSON.parse(bodyStr);
+            if (p && p.login && p.token) {
+                cred.login = p.login;
+                cred.token = p.token;
+            }
+        } catch { /* ignora corpos que não sejam JSON */ }
+    }
+
+    const _fetch = window.fetch;
+    window.fetch = function (input, init) {
+        try {
+            const url = String((input && input.url) || input);
+            if (init && typeof init.body === 'string' && url.includes('executePRD')) {
+                capturar(init.body);
+            }
+        } catch { /* nunca deve impedir o pedido original */ }
+        return _fetch.apply(this, arguments);
+    };
+
+    const _send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (body) {
+        try {
+            if (typeof body === 'string' && body.includes('"token"')) capturar(body);
+        } catch { /* idem */ }
+        return _send.apply(this, arguments);
     };
 
     function detetarNSAPDom() {
@@ -93,6 +132,12 @@
     }
 
     async function minutosDoDia(diaComp, config) {
+        const login = window.login || cred.login;
+        const token = window.loginToken || cred.token;
+        if (!login || !token) {
+            throw new Error('Sem login/token: navega um pouco no portal e tenta de novo');
+        }
+
         const corpoInterno = {
             ID: "",
             ID_AusenciaEquipa: "",
@@ -103,17 +148,17 @@
             TipoAusencia: "REH",
             Nome_TipoAusencia: "Recuperação de Horas",
             Motivo: "Recuperação de Horas",
-            EstadoWF: "", PassoWF: "", Quem: window.login, Quando: "", Erro: "",
+            EstadoWF: "", PassoWF: "", Quem: login, Quando: "", Erro: "",
             Anexos: [], CCEnabled: true, TipoLanc: "0", Periodos: "0",
             Data: formatDate(new Date()), TimezoneOffset: "-60", SobrePosicao_Acao: "-1"
         };
 
         const payload = {
-            login: window.login,
+            login: login,
             view: "GT_AusenciaPessoal",
             funcao: "vpGT_AusenciaInsere",
             json: JSON.stringify(corpoInterno),
-            token: window.loginToken,
+            token: token,
         };
 
         const resp = await fetch(ENDPOINT, {
@@ -546,27 +591,36 @@
     }
 
     // Criar o Botão Flutuante com Posição Configurável
-    const btn = document.createElement('button');
-    btn.textContent = '⏱';
-    btn.title = 'Clique: abrir/fechar painel. Arrasta para mover.';
+    // (com @run-at document-start o body pode ainda não existir, por isso espera-se por ele)
+    function iniciarBotao() {
+        const btn = document.createElement('button');
+        btn.textContent = '⏱';
+        btn.title = 'Clique: abrir/fechar painel. Arrasta para mover.';
 
-    let estiloPosicao = '';
-    for (const [prop, val] of Object.entries(POSICAO_INICIAL)) {
-        estiloPosicao += `${prop}:${val};`;
+        let estiloPosicao = '';
+        for (const [prop, val] of Object.entries(POSICAO_INICIAL)) {
+            estiloPosicao += `${prop}:${val};`;
+        }
+
+        btn.style.cssText = `position:fixed;z-index:99999;width:36px;height:36px;border-radius:50%;border:1px solid #ccc;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);cursor:pointer;font-size:16px;${estiloPosicao}`;
+        document.body.appendChild(btn);
+
+        const foiArrastado = tornarArrastavel(btn);
+        btn.addEventListener('click', () => {
+            if (foiArrastado()) return;
+            // O botão flutuante funciona como toggle: abre se fechado, fecha se aberto
+            const existente = document.getElementById('painel-minutos-rh');
+            if (existente) {
+                existente.remove();
+            } else {
+                mostrarPainel();
+            }
+        });
     }
 
-    btn.style.cssText = `position:fixed;z-index:99999;width:36px;height:36px;border-radius:50%;border:1px solid #ccc;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);cursor:pointer;font-size:16px;${estiloPosicao}`;
-    document.body.appendChild(btn);
-
-    const foiArrastado = tornarArrastavel(btn);
-    btn.addEventListener('click', () => {
-        if (foiArrastado()) return;
-        // O botão flutuante agora funciona como toggle: abre se fechado, fecha se aberto
-        const existente = document.getElementById('painel-minutos-rh');
-        if (existente) {
-            existente.remove();
-        } else {
-            mostrarPainel();
-        }
-    });
+    if (document.body) {
+        iniciarBotao();
+    } else {
+        document.addEventListener('DOMContentLoaded', iniciarBotao);
+    }
 })();
