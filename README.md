@@ -58,10 +58,17 @@ Permite criar o orçamento automaticamente quando não existe
 ---
 
 ### 6. Nemesis - Evoluir ordens de viabilidades
-Permite evoluir ordens de viabilidades a partir das minhas tarefas (deves fazer uma pesquisa na pasta Elaborar Orçamento.
+Permite evoluir ordens de viabilidades
 **[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis_VB.user.js)**
 
 ---
+
+### 7. Nemesis - Evoluir ordens de cadastro
+Permite evoluir ordens de cadastro
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis_CAD.user.js)**
+
+---
+
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
