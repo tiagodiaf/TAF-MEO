@@ -69,6 +69,12 @@ Permite evoluir ordens de cadastro
 
 ---
 
+### 8. Nemesis - Evoluir ordens de carcad_o
+Permite evoluir ordens de cadastro
+**[Instalar Script](https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis_CARCADO.user.js)**
+
+---
+
 O Tampermonkey abre automaticamente uma janela de confirmação — clica em **Instalar**.
 ## Notas
 Alguma dica ou alteração pdoes falar comigo.
