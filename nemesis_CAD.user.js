@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis CAD - Cadastros IP
 // @namespace    tiago.nemesis.cad
-// @version      0.5
+// @version      2.0
 // @description  Automatiza o fluxo de cadastros IP (uma ou várias ordens): pesquisa, cadastro, recolha (PJ0101), resposta final e relatório
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -13,6 +13,9 @@
 
 (() => {
   'use strict';
+
+  // ▼ VERSÃO — muda só aqui (e na linha // @version do cabeçalho, que o Tampermonkey não deixa usar variáveis) ▼
+  const VERSAO = '2.0';
   if (window.top !== window.self) return;
 
   /* ───────────── Configuração global ───────────── */
@@ -555,45 +558,69 @@
     run();
   }
 
-  /* ───────────── Barra partilhada (VB + CAD) ───────────── */
-  // Os separadores dos dois scripts ficam lado a lado numa barra única. Arrasta-se pela pega ⋮⋮ (duplo clique repõe a posição).
-  const DOCK_KEY = 'nemesis_dock_pos_v1';
+  /* ───────────── Barra partilhada (VB + CAD + CARCAD_O) ─────────────
+     ATENÇÃO: este bloco, o CSS do separador e o bloco "Separador" são iguais nos 3 scripts.
+     Se alterares a barra num, altera nos 3. A versão mostrada no balão vem da constante VERSAO no topo de cada script. */
+  const DOCK_ID = 'nemesis-dock-v2';
+  const DOCK_KEY = 'nemesis_dock_pos_v2';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function getDock() {
-    let d = document.getElementById('nemesis-dock');
+    let d = document.getElementById(DOCK_ID);
     if (d) return d;
     d = document.createElement('div');
-    d.id = 'nemesis-dock';
+    d.id = DOCK_ID;
     const r = d.attachShadow({ mode: 'open' });
     r.innerHTML = `<style>
-      :host{all:initial;position:fixed;z-index:2147483647;display:flex;align-items:flex-end;gap:4px;right:110px;bottom:0}
-      .grip{width:18px;height:32px;display:flex;align-items:center;justify-content:center;background:#1f2937;color:#9ca3af;border-radius:10px 10px 0 0;
-        font:700 12px/1 "Segoe UI",system-ui,sans-serif;letter-spacing:-2px;cursor:grab;touch-action:none;user-select:none}
-      .grip.drag{cursor:grabbing}
-    </style><div class="grip" title="Arrastar (duplo clique repõe a posição)">⋮⋮</div><slot></slot>`;
-    const grip = r.querySelector('.grip');
+      :host{all:initial;position:fixed;z-index:2147483647;right:110px;bottom:10px;font-family:"Segoe UI",system-ui,sans-serif}
+      *{box-sizing:border-box}
+      .wrap{position:relative;display:flex;flex-direction:column;align-items:flex-end}
+      .row{display:flex;align-items:center;gap:6px}
+      .grip{width:12px;height:28px;display:flex;align-items:center;justify-content:center;font:700 12px/1 "Segoe UI",system-ui,sans-serif;letter-spacing:-2px;
+        color:#98a2b3;cursor:grab;touch-action:none;user-select:none;opacity:0;transition:opacity .15s}
+      .wrap:hover .grip,.grip.drag{opacity:1}.grip.drag{cursor:grabbing}
+      .ico{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid #d0d5dd;background:#fff;
+        color:#475467;cursor:pointer;opacity:.55;transition:opacity .15s,box-shadow .15s}
+      .wrap:hover .ico,.wrap.pin .ico,.ico:focus-visible{opacity:1;box-shadow:0 2px 10px rgba(20,30,50,.15)}
+      .ico:focus-visible{outline:2px solid #9ca3af;outline-offset:2px}
+      .balloon{position:absolute;right:0;bottom:100%;padding-bottom:8px;opacity:0;visibility:hidden;transform:translateY(4px);
+        transition:opacity .15s .25s,transform .15s .25s,visibility 0s .4s}
+      .wrap:hover .balloon,.wrap.pin .balloon{opacity:1;visibility:visible;transform:none;transition-delay:0s}
+      .card{width:250px;padding:6px 0;background:#fff;border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.18)}
+      .t{padding:6px 14px 4px;font-size:12px;color:#667085}
+      .list{display:flex;flex-direction:column}
+      :host([data-run]) .ico,:host([data-run]) .balloon,:host([data-panel]) .balloon{display:none}
+      @media (prefers-reduced-motion:reduce){.balloon,.ico,.grip{transition:none}}
+    </style><div class="wrap">
+      <div class="balloon"><div class="card"><div class="t">Scripts Nemesis</div><div class="list"><slot name="item"></slot></div></div></div>
+      <div class="row"><span class="grip" title="Arrastar (duplo clique repõe a posição)">⋮⋮</span><slot name="pill"></slot>
+        <button class="ico" title="Scripts Nemesis" aria-label="Scripts Nemesis"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6" rx="1.6"/><rect x="10" y="2" width="6" height="6" rx="1.6"/><rect x="2" y="10" width="6" height="6" rx="1.6"/><rect x="10" y="10" width="6" height="6" rx="1.6"/></svg></button></div>
+    </div>`;
+    const wrap = r.querySelector('.wrap'), grip = r.querySelector('.grip'), ico = r.querySelector('.ico');
+    ico.addEventListener('click', () => wrap.classList.toggle('pin'));
+    r.querySelector('.balloon').addEventListener('click', () => wrap.classList.remove('pin'));
+    document.addEventListener('click', (e) => { if (!e.composedPath().includes(d)) wrap.classList.remove('pin'); });
     let cur = null, g = null;
+    const vp = () => ({ w: document.documentElement.clientWidth, h: document.documentElement.clientHeight });
     const guardada = () => { try { return JSON.parse(localStorage.getItem(DOCK_KEY) || 'null'); } catch (e) { return null; } };
-    const setPos = (x, y) => {
-      cur = {
-        x: clamp(x, 0, Math.max(0, window.innerWidth - d.offsetWidth)),
-        y: clamp(y, 0, Math.max(0, window.innerHeight - d.offsetHeight)),
-      };
-      d.style.left = cur.x + 'px'; d.style.top = cur.y + 'px'; d.style.right = 'auto'; d.style.bottom = 'auto';
+    // A posição guarda-se como distância ao canto inferior direito, para a barra crescer para a esquerda
+    const setPos = (rr, bb) => {
+      const v = vp();
+      cur = { r: clamp(rr, 0, Math.max(0, v.w - d.offsetWidth)), b: clamp(bb, 0, Math.max(0, v.h - d.offsetHeight)) };
+      d.style.right = cur.r + 'px'; d.style.bottom = cur.b + 'px';
     };
     const place = () => {
       const p = guardada();
-      if (p && typeof p.x === 'number' && typeof p.y === 'number') setPos(p.x, p.y);
-      else { d.style.left = ''; d.style.top = ''; d.style.right = ''; d.style.bottom = ''; }
+      if (p && typeof p.r === 'number' && typeof p.b === 'number') setPos(p.r, p.b);
+      else { d.style.right = ''; d.style.bottom = ''; }
     };
     grip.addEventListener('pointerdown', (e) => {
       if (e.button !== undefined && e.button !== 0) return;
-      const b = d.getBoundingClientRect();
-      g = { sx: e.clientX, sy: e.clientY, x0: b.left, y0: b.top };
+      const b = d.getBoundingClientRect(), v = vp();
+      g = { sx: e.clientX, sy: e.clientY, r0: v.w - b.right, b0: v.h - b.bottom };
       grip.setPointerCapture(e.pointerId);
       grip.classList.add('drag');
     });
-    grip.addEventListener('pointermove', (e) => { if (g) setPos(g.x0 + e.clientX - g.sx, g.y0 + e.clientY - g.sy); });
+    grip.addEventListener('pointermove', (e) => { if (g) setPos(g.r0 - (e.clientX - g.sx), g.b0 - (e.clientY - g.sy)); });
     grip.addEventListener('pointerup', (e) => {
       if (!g) return;
       g = null;
@@ -609,25 +636,30 @@
     return d;
   }
   const dock = getDock();
-  // Esconde a barra quando nenhum separador está visível
+  // Esconde a barra quando nenhum script tem nada para mostrar
   const dockSync = () => {
-    const algum = [...dock.children].some((c) => c.style.display !== 'none');
+    const algum = [...dock.children].some((c) => c.slot === 'item' && c.style.display !== 'none');
     dock.style.visibility = algum ? '' : 'hidden';
   };
 
   /* ───────────── Interface ───────────── */
   const CSS = `
-    :host{all:initial;display:block}
+    :host{all:initial;display:contents}
     *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
-    .fab{display:block;height:32px;padding:0 16px;border:0;border-radius:10px 10px 0 0;cursor:pointer;user-select:none;white-space:nowrap;
-      background:#6d28d9;color:#fff;font-weight:700;font-size:13px;box-shadow:0 -2px 10px rgba(109,40,217,.35)}
-    .fab small{font-size:10px;font-weight:600;opacity:.75;margin-left:7px}
-    .fab:hover{background:#5b21b6}
-    .fab:focus-visible,.btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid #c4b5fd;outline-offset:2px}
-    .fab[data-s=run]::before{content:"";display:inline-block;width:9px;height:9px;margin-right:7px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;vertical-align:-1px;animation:g 1s linear infinite}
-    .fab[data-s=err]{background:#c0392b}.fab[data-s=err]::before{content:"!";margin-right:7px}
-    .fab[data-s=ok]{background:#17825D}.fab[data-s=ok]::before{content:"✓";margin-right:7px}
-    @media (prefers-reduced-motion:reduce){.fab[data-s=run]::before{animation:none}}
+    .btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid #9ca3af;outline-offset:2px}
+    .pill{position:relative;display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:17px;border:1px solid #d0d5dd;background:#fff;color:#17202a;
+      font-size:13px;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(20,30,50,.12)}
+    .pill[hidden]{display:none}
+    .pill:hover{border-color:#98a2b3}
+    .pill:focus-visible{outline:2px solid #9ca3af;outline-offset:2px}
+    .pi{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;font-size:14px;line-height:1}
+    .pill[data-s=run] .pi{width:12px;height:12px;border:2px solid #1f2937;border-top-color:transparent;border-radius:50%;animation:g 1s linear infinite}
+    .pill[data-s=err] .pi::before{content:"!";color:#c0392b}
+    .pill[data-s=ok] .pi::before{content:"✓";color:#17825D}
+    .pn{color:#667085}.pill[data-s=err] .pn{color:#c0392b}.pill[data-s=ok] .pn{color:#17825D}
+    .pg{position:absolute;left:0;bottom:0;height:2px;background:#1f2937;transition:width .3s}
+    .pd{border:0;background:none;color:#98a2b3;font-size:16px;line-height:1;cursor:pointer;padding:0 0 0 2px}.pd:hover{color:#17202a}.pd[hidden]{display:none}
+    @media (prefers-reduced-motion:reduce){.pill[data-s=run] .pi{animation:none}}
     .panel{position:fixed;left:0;top:0;z-index:2147483647;width:340px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
       border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.22);font-size:14px}
     .panel[hidden]{display:none}
@@ -643,23 +675,23 @@
     .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;color:#17202a}
     .chk input{width:16px;height:16px;cursor:pointer}
     .btn{width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid #c5ccd8;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
-    .btn.primary{background:#6d28d9;border-color:#6d28d9;color:#fff}.btn.primary:disabled{background:#d8ccf7;border-color:#d8ccf7;cursor:not-allowed}
+    .btn.primary{background:#1f2937;border-color:#1f2937;color:#fff}.btn.primary:disabled{background:#cbd2dc;border-color:#cbd2dc;cursor:not-allowed}
     .btn.ghost{color:#475467}.row{display:flex;gap:8px}.row .btn{margin-top:14px}
     .ordem{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-    .tag{background:#ede9fe;color:#5b21b6;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}
+    .tag{background:#eceff3;color:#111827;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}
     .steps{list-style:none;margin:0;padding:0}
     .steps li{display:flex;align-items:center;gap:10px;padding:6px 0;color:#98a2b3;position:relative}
     .steps li:not(:last-child)::after{content:"";position:absolute;left:8px;top:26px;height:calc(100% - 12px);border-left:2px solid #e1e5ec}
     .steps i{width:18px;height:18px;border-radius:50%;border:2px solid #c5ccd8;background:#fff;flex:none;z-index:1}
     .steps li.done{color:#17202a}.steps li.done i{background:#17825D;border-color:#17825D;box-shadow:inset 0 0 0 3px #fff;}
-    .steps li.cur{color:#17202a;font-weight:600}.steps li.cur i{border-color:#6d28d9;border-top-color:transparent;animation:g 1s linear infinite}
+    .steps li.cur{color:#17202a;font-weight:600}.steps li.cur i{border-color:#1f2937;border-top-color:transparent;animation:g 1s linear infinite}
     @keyframes g{to{transform:rotate(360deg)}}
-    @media (prefers-reduced-motion:reduce){.steps li.cur i{animation:none;border-top-color:#6d28d9}}
+    @media (prefers-reduced-motion:reduce){.steps li.cur i{animation:none;border-top-color:#1f2937}}
     .nota{margin-top:10px;padding:9px 10px;background:#f3f5f8;border-radius:8px;font-size:13px;color:#475467}
     .err{padding:10px;background:#fdecea;border:1px solid #f3b8b1;border-radius:8px;color:#8f2a20;font-size:13px;word-break:break-word}
     .okbox{padding:10px;background:#e8f6ef;border:1px solid #a9dcc2;border-radius:8px;color:#0f5a40;font-size:13px}
     dl{margin:0}dt{font-weight:600;margin-top:8px}dd{margin:2px 0 0;word-break:break-word}
-    .bar{height:6px;background:#e1e5ec;border-radius:999px;overflow:hidden;margin:0 0 12px}.bar i{display:block;height:100%;background:#6d28d9;transition:width .3s}
+    .bar{height:6px;background:#e1e5ec;border-radius:999px;overflow:hidden;margin:0 0 12px}.bar i{display:block;height:100%;background:#1f2937;transition:width .3s}
     .sum{font-size:13px;color:#475467;margin-bottom:8px}
     .rep{list-style:none;margin:10px 0 0;padding:0;max-height:240px;overflow:auto;border:1px solid #e6e9ef;border-radius:8px}
     .rep li{display:flex;gap:8px;padding:7px 9px;border-bottom:1px solid #eef0f4;font-size:12.5px;align-items:flex-start}.rep li:last-child{border-bottom:0}
@@ -670,22 +702,80 @@
     @media (max-width:420px){.panel{width:calc(100vw - 16px)}}
   `;
 
+  /* ───────────── Separador (item no balão + pílula + painel) ───────────── */
+  const itemHost = document.createElement('div');
+  itemHost.id = 'cad-item';
+  itemHost.slot = 'item';
+  itemHost.style.order = '2';
+  dock.appendChild(itemHost);
+  const itemRoot = itemHost.attachShadow({ mode: 'open' });
+  itemRoot.innerHTML = `<style>
+    :host{all:initial;display:block}
+    *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
+    .item{display:flex;align-items:center;gap:10px;width:calc(100% - 8px);margin:2px 4px;padding:9px 10px;border:0;border-radius:8px;background:none;cursor:pointer;
+      font-size:13px;color:#17202a;text-align:left}
+    .item:hover{background:#f2f4f7}
+    .item:focus-visible{outline:2px solid #9ca3af}
+    .dot{width:7px;height:7px;border-radius:50%;background:#c5ccd8;flex:none}
+    .item[data-s=ok] .dot{background:#17825D}.item[data-s=err] .dot{background:#c0392b}
+    .nm{flex:1;font-weight:600}
+    small{font-size:11px;color:#98a2b3}
+    svg{color:#98a2b3;flex:none}
+  </style>
+    <button class="item" title="Cadastros IP v${VERSAO}"><span class="dot"></span><span class="nm">Cadastros IP</span><small>v${VERSAO}</small>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2l5 5-5 5"/></svg></button>`;
+  const itemBtn = itemRoot.querySelector('.item');
+
   const host = document.createElement('div');
   host.id = 'cad-host';
-  host.className = 'nm-tab';
-  host.style.order = '2';
+  host.slot = 'pill';
   dock.appendChild(host);
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
-    <button class="fab" title="Cadastros IP v0.5">Cadastros IP<small>v0.5</small></button>
+    <div class="pill" role="button" tabindex="0" hidden><span class="pi"></span><span>Cadastros IP</span><span class="pn"></span><button class="pd" title="Dispensar" aria-label="Dispensar" hidden>×</button><span class="pg"></span></div>
     <section class="panel" hidden>
-      <header><strong>Cadastros IP</strong><span class="sub">Nemesis · v0.5</span>
+      <header><strong>Cadastros IP</strong><span class="sub">Nemesis · v${VERSAO}</span>
         <button class="x gear" id="gear" title="Definições" aria-label="Definições">⚙</button>
         <button class="x" id="close" aria-label="Fechar">×</button></header>
       <div class="body"></div>
     </section>`;
   const $ = (sel, el = root) => el.querySelector(sel);
-  const fab = $('.fab'), panel = $('.panel'), body = $('.body');
+  const pill = $('.pill'), pillN = $('.pn'), pillG = $('.pg'), pillD = $('.pd'), closeBtn = $('#close');
+  const panel = $('.panel'), body = $('.body');
+
+  // Estado da pílula + ponto no balão + sinalizações na barra (a executar / painel aberto)
+  function syncPill(s, rel) {
+    let st = '', txt = '', pct = 0, tip = `Cadastros IP v${VERSAO}`, dispensada = false;
+    if (pendingConfirm) st = 'run';
+    else if (s) st = s.erro ? 'err' : 'run';
+    else if (rel) st = rel.res.every((r) => r.estado === 'ok') && rel.res.length === rel.fila.length ? 'ok' : 'err';
+    if (s && st) {
+      const total = s.fila.length;
+      txt = `${s.idx + 1}/${total}`;
+      pct = Math.round((s.res.length / total) * 100);
+      tip += ` · ordem ${s.idx + 1} de ${total}${st === 'err' ? ' (erro)' : ''}`;
+    } else if (rel && st) {
+      const ok = rel.res.filter((r) => r.estado === 'ok').length;
+      txt = `${ok}/${rel.fila.length}`;
+      pct = 100;
+      tip += ` · relatório: ${ok} de ${rel.fila.length} ok`;
+      dispensada = localStorage.getItem('nemesis_dispensado_cad') === String(rel.ts);
+    }
+    itemBtn.dataset.s = st;
+    pill.dataset.s = st;
+    if (st === 'run') { if (dock.dataset.run !== 'cad') dock.dataset.run = 'cad'; }
+    else if (dock.dataset.run === 'cad') delete dock.dataset.run;
+    const outro = !!dock.dataset.run && dock.dataset.run !== 'cad';   // enquanto outro script executa, só ele aparece
+    pill.hidden = !st || outro || dispensada;
+    pillD.hidden = !(st === 'ok' || (st === 'err' && !!rel));
+    pillN.textContent = txt;
+    pillG.style.width = pct + '%';
+    pill.title = tip;
+    closeBtn.textContent = st ? '–' : '×';
+    closeBtn.title = closeBtn.ariaLabel = st ? 'Minimizar' : 'Fechar';
+    if (aberto) { if (dock.dataset.panel !== 'cad') dock.dataset.panel = 'cad'; }
+    else if (dock.dataset.panel === 'cad') delete dock.dataset.panel;
+  }
 
   let aberto = !!load() || (isTarefas && !configurado());
   let emConfig = !configurado();
@@ -701,7 +791,7 @@
   // O painel abre por cima do separador (ou por baixo, se não houver espaço)
   function placePanel() {
     if (panel.hidden) return;
-    const r = fab.getBoundingClientRect();
+    const r = dock.getBoundingClientRect();
     const pw = panel.offsetWidth, ph = panel.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
     const left = clamp(r.right - pw, 8, Math.max(8, vw - pw - 8));
@@ -712,13 +802,22 @@
     panel.style.top = top + 'px';
   }
 
-  fab.addEventListener('click', () => setAberto(!aberto));
+  itemBtn.addEventListener('click', (e) => { e.currentTarget.blur(); setAberto(!aberto); });
+  pill.addEventListener('click', () => setAberto(!aberto));
+  pill.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAberto(!aberto); } });
+  pillD.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const rel = lerRelatorio();
+    if (rel) { try { localStorage.setItem('nemesis_dispensado_cad', String(rel.ts)); } catch (_) { /* ignorar */ } }
+    render();
+  });
   window.addEventListener('resize', placePanel);
   // Reposiciona o painel quando a barra se mexe e fecha-o se o outro script abriu o dele
-  new MutationObserver(() => {
+  new MutationObserver((recs) => {
+    if (recs.some((r) => r.attributeName === 'data-run')) { render(); return; }
     const quem = (dock.dataset.open || '').split(':')[0];
     if (aberto && quem && quem !== 'cad') { aberto = false; render(); } else placePanel();
-  }).observe(dock, { attributes: true, attributeFilter: ['style', 'data-open'], subtree: true });
+  }).observe(dock, { attributes: true, attributeFilter: ['style', 'data-open', 'data-run'], subtree: true });
 
   $('#close').addEventListener('click', () => setAberto(false));
   $('#gear').addEventListener('click', () => { emConfig = !emConfig; lastKey = ''; render(); });
@@ -736,12 +835,11 @@
   function renderInner() {
     const s = load();
     const rel = s ? null : lerRelatorio();
-    host.style.display = (isTarefas || s || rel) ? '' : 'none';
+    itemHost.style.display = (isTarefas || s || rel) ? '' : 'none';
     dockSync();
     panel.hidden = !aberto;
     const v = pendingConfirm ? 'confirm' : emConfig ? 'config' : s ? (s.erro ? 'erro' : 'run') : rel ? 'done' : 'form';
-    const relOk = rel && rel.res.every((r) => r.estado === 'ok') && rel.res.length === rel.fila.length;
-    fab.dataset.s = v === 'run' || v === 'confirm' ? 'run' : v === 'erro' ? 'err' : v === 'done' ? (relOk ? 'ok' : 'err') : '';
+    syncPill(s, rel);
     if ((v === 'form' || v === 'config') && lastView === v) return;
     const key = v + (s ? `${s.idx}|${s.prog}|${s.nota}|${s.erro || ''}` : rel ? 'r' + rel.ts : '');
     if (key === lastKey) return;
