@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis CARCAD_O
 // @namespace    tiago.nemesis.carcad
-// @version      2.0
+// @version      2.1
 // @description  Lista de ordens ORAC/ORAP/Esclarecimentos em lote: pesquisa, orçamento, recolha (contrato novo ou antigo), resposta, relatório e histórico
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -9,13 +9,15 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        unsafeWindow
+// @updateURL    https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-carcad-o.user.js
+// @downloadURL  https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-carcad-o.user.js
 // ==/UserScript==
 
-(() => {
+(async () => {
   'use strict';
 
   // ▼ VERSÃO — muda só aqui (e na linha // @version do cabeçalho, que o Tampermonkey não deixa usar variáveis) ▼
-  const VERSAO = '2.0';
+  const VERSAO = '2.1';
   if (window.top !== window.self) return;
 
   /* ───────────── Configuração global ───────────── */
@@ -655,109 +657,74 @@
     run();
   }
 
-  /* ───────────── Barra partilhada (VB + CAD + CARCAD_O) ─────────────
-     ATENÇÃO: este bloco, o CSS do separador e o bloco "Separador" são iguais nos 3 scripts.
-     Se alterares a barra num, altera nos 3. A versão mostrada no balão vem da constante VERSAO no topo de cada script. */
-  const DOCK_ID = 'nemesis-dock-v2';
-  const DOCK_KEY = 'nemesis_dock_pos_v2';
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  function getDock() {
-    let d = document.getElementById(DOCK_ID);
-    if (d) return d;
-    d = document.createElement('div');
-    d.id = DOCK_ID;
-    const r = d.attachShadow({ mode: 'open' });
-    r.innerHTML = `<style>
-      :host{all:initial;position:fixed;z-index:2147483647;right:110px;bottom:10px;font-family:"Segoe UI",system-ui,sans-serif}
-      *{box-sizing:border-box}
-      .wrap{position:relative;display:flex;flex-direction:column;align-items:flex-end}
-      .row{display:flex;align-items:center;gap:6px}
-      .grip{width:12px;height:28px;display:flex;align-items:center;justify-content:center;font:700 12px/1 "Segoe UI",system-ui,sans-serif;letter-spacing:-2px;
-        color:#98a2b3;cursor:grab;touch-action:none;user-select:none;opacity:0;transition:opacity .15s}
-      .wrap:hover .grip,.grip.drag{opacity:1}.grip.drag{cursor:grabbing}
-      .ico{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid #d0d5dd;background:#fff;
-        color:#475467;cursor:pointer;opacity:.55;transition:opacity .15s,box-shadow .15s}
-      .wrap:hover .ico,.wrap.pin .ico,.ico:focus-visible{opacity:1;box-shadow:0 2px 10px rgba(20,30,50,.15)}
-      .ico:focus-visible{outline:2px solid #9ca3af;outline-offset:2px}
-      .balloon{position:absolute;right:0;bottom:100%;padding-bottom:8px;opacity:0;visibility:hidden;transform:translateY(4px);
-        transition:opacity .15s .25s,transform .15s .25s,visibility 0s .4s}
-      .wrap:hover .balloon,.wrap.pin .balloon{opacity:1;visibility:visible;transform:none;transition-delay:0s}
-      .card{width:250px;padding:6px 0;background:#fff;border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.18)}
-      .t{padding:6px 14px 4px;font-size:12px;color:#667085}
-      .list{display:flex;flex-direction:column}
-      :host([data-run]) .ico,:host([data-run]) .balloon,:host([data-panel]) .balloon{display:none}
-      @media (prefers-reduced-motion:reduce){.balloon,.ico,.grip{transition:none}}
-    </style><div class="wrap">
-      <div class="balloon"><div class="card"><div class="t">Scripts Nemesis</div><div class="list"><slot name="item"></slot></div></div></div>
-      <div class="row"><span class="grip" title="Arrastar (duplo clique repõe a posição)">⋮⋮</span><slot name="pill"></slot>
-        <button class="ico" title="Scripts Nemesis" aria-label="Scripts Nemesis"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6" rx="1.6"/><rect x="10" y="2" width="6" height="6" rx="1.6"/><rect x="2" y="10" width="6" height="6" rx="1.6"/><rect x="10" y="10" width="6" height="6" rx="1.6"/></svg></button></div>
-    </div>`;
-    const wrap = r.querySelector('.wrap'), grip = r.querySelector('.grip'), ico = r.querySelector('.ico');
-    ico.addEventListener('click', () => wrap.classList.toggle('pin'));
-    r.querySelector('.balloon').addEventListener('click', () => wrap.classList.remove('pin'));
-    document.addEventListener('click', (e) => { if (!e.composedPath().includes(d)) wrap.classList.remove('pin'); });
-    let cur = null, g = null;
-    const vp = () => ({ w: document.documentElement.clientWidth, h: document.documentElement.clientHeight });
-    const guardada = () => { try { return JSON.parse(localStorage.getItem(DOCK_KEY) || 'null'); } catch (e) { return null; } };
-    // A posição guarda-se como distância ao canto inferior direito, para a barra crescer para a esquerda
-    const setPos = (rr, bb) => {
-      const v = vp();
-      cur = { r: clamp(rr, 0, Math.max(0, v.w - d.offsetWidth)), b: clamp(bb, 0, Math.max(0, v.h - d.offsetHeight)) };
-      d.style.right = cur.r + 'px'; d.style.bottom = cur.b + 'px';
-    };
-    const place = () => {
-      const p = guardada();
-      if (p && typeof p.r === 'number' && typeof p.b === 'number') setPos(p.r, p.b);
-      else { d.style.right = ''; d.style.bottom = ''; }
-    };
-    grip.addEventListener('pointerdown', (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      const b = d.getBoundingClientRect(), v = vp();
-      g = { sx: e.clientX, sy: e.clientY, r0: v.w - b.right, b0: v.h - b.bottom };
-      grip.setPointerCapture(e.pointerId);
-      grip.classList.add('drag');
-    });
-    grip.addEventListener('pointermove', (e) => { if (g) setPos(g.r0 - (e.clientX - g.sx), g.b0 - (e.clientY - g.sy)); });
-    grip.addEventListener('pointerup', (e) => {
-      if (!g) return;
-      g = null;
-      grip.classList.remove('drag');
-      try { grip.releasePointerCapture(e.pointerId); } catch (_) { /* ignorar */ }
-      if (cur) { try { localStorage.setItem(DOCK_KEY, JSON.stringify(cur)); } catch (_) { /* ignorar */ } }
-    });
-    grip.addEventListener('dblclick', () => { try { localStorage.removeItem(DOCK_KEY); } catch (_) { /* ignorar */ } place(); });
-    document.documentElement.appendChild(d);
-    place();
-    window.addEventListener('resize', place);
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(place).observe(d);
-    return d;
+  /* ───────────── Ligação ao Nemesis Dock (contrato v1) ─────────────
+     A barra (ícone, balão, pílulas, posição dos painéis) vive no script "Nemesis Dock".
+     Este script só se regista nela e envia-lhe o estado. Sem o Dock instalado, não arranca.
+     Mensagens: CustomEvent no document, com o detail em string JSON (os scripts correm isolados).
+       registar {id,nome,versao,ordem} · estado {id,naLista,estado,pilula,contador,progresso,dica,dispensavel}
+       abrir {id} · fechar {id} · remover {id}   |   o Dock avisa o host do painel com "nemesis-dock:dispensar"
+     O contrato completo está no cabeçalho do nemesis-dock.user.js. */
+  const DOCK_URL = 'https://raw.githubusercontent.com/tiagodiaf/nemesis-tarefas/main/nemesis-dock.user.js';
+  const ND_ID = 'carcad', ND_NOME = 'CARCAD_O', ND_ORDEM = 3;
+  const nd = (nome, obj) => document.dispatchEvent(new CustomEvent('nemesis-dock:' + nome, { detail: JSON.stringify(obj) }));
+
+  // Aviso pequeno e discreto, partilhado pelos 3 scripts (uma só caixa, com os nomes dos que precisam do Dock)
+  function avisoDock(motivo, on) {
+    let a = document.getElementById('nemesis-dock-aviso');
+    const nomes = new Set(a && a.dataset.scripts ? a.dataset.scripts.split('|') : []);
+    if (on) nomes.add(ND_NOME); else nomes.delete(ND_NOME);
+    if (!nomes.size) { if (a) a.remove(); return; }
+    if (!a) {
+      a = document.createElement('div');
+      a.id = 'nemesis-dock-aviso';
+      const sr = a.attachShadow({ mode: 'open' });
+      sr.innerHTML = `<style>
+        :host{all:initial;position:fixed;z-index:2147483647;right:110px;bottom:10px;font:12px/1.35 "Segoe UI",system-ui,sans-serif}
+        .av{display:flex;align-items:center;gap:10px;max-width:360px;padding:7px 10px;background:#fff;color:#475467;border:1px solid #d0d5dd;border-radius:10px;box-shadow:0 2px 10px rgba(20,30,50,.12)}
+        a{color:#17202a;font-weight:600;text-decoration:underline;white-space:nowrap}
+        button{border:0;background:none;color:#98a2b3;font-size:16px;line-height:1;cursor:pointer;padding:0}button:hover{color:#17202a}
+      </style><div class="av"><slot></slot><a href="${DOCK_URL}" target="_blank" rel="noopener">Instalar</a><button title="Fechar" aria-label="Fechar">×</button></div>`;
+      sr.querySelector('button').addEventListener('click', () => a.remove());
+      a.appendChild(document.createElement('span'));
+      document.documentElement.appendChild(a);
+    }
+    if (on) a.dataset.motivo = motivo;
+    a.dataset.scripts = [...nomes].join('|');
+    a.querySelector('span').textContent = (a.dataset.motivo === 'versao'
+      ? 'O Nemesis Dock instalado não é compatível. Instala a versão mais recente.'
+      : 'Falta instalar o Nemesis Dock.') + ' Necessário para: ' + [...nomes].join(', ');
   }
-  const dock = getDock();
-  // Esconde a barra quando nenhum script tem nada para mostrar
-  const dockSync = () => {
-    const algum = [...dock.children].some((c) => c.slot === 'item' && c.style.display !== 'none');
-    dock.style.visibility = algum ? '' : 'hidden';
-  };
+
+  // Espera pelo Dock (a ordem de arranque entre scripts não é garantida). Passados ~5 s mostra o aviso,
+  // mas continua à escuta: se o Dock chegar, o aviso desaparece e o script arranca.
+  function esperarDock(ms = 5000) {
+    return new Promise((res) => {
+      let feito = false, t = null;
+      const contrato = () => { const dk = document.getElementById('nemesis-dock'); return dk ? (dk.dataset.contrato || '') : null; };
+      const tentar = () => {
+        if (feito) return;
+        const c = contrato();
+        if (c === '1') {
+          feito = true;
+          clearTimeout(t);
+          document.removeEventListener('nemesis-dock:pronto', tentar);
+          avisoDock('', false);
+          res();
+        } else if (c) avisoDock('versao', true);   // Dock presente mas com outro contrato
+      };
+      document.addEventListener('nemesis-dock:pronto', tentar);
+      tentar();
+      if (!feito) t = setTimeout(() => { if (!feito) avisoDock(contrato() ? 'versao' : 'falta', true); }, ms);
+    });
+  }
+  await esperarDock();
 
   /* ───────────── Interface ───────────── */
   const CSS = `
     :host{all:initial;display:contents;--c:#1f2937;--ch:#111827;--cs:#eceff3;--cf:#9ca3af;--cd:#cbd2dc}
     *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
     .btn:focus-visible,.inp:focus-visible,textarea:focus-visible{outline:3px solid var(--cf);outline-offset:2px}
-    .pill{position:relative;display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:17px;border:1px solid #d0d5dd;background:#fff;color:#17202a;
-      font-size:13px;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(20,30,50,.12)}
-    .pill[hidden]{display:none}
-    .pill:hover{border-color:#98a2b3}
-    .pill:focus-visible{outline:2px solid #9ca3af;outline-offset:2px}
-    .pi{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;font-size:14px;line-height:1}
-    .pill[data-s=run] .pi{width:12px;height:12px;border:2px solid #1f2937;border-top-color:transparent;border-radius:50%;animation:g 1s linear infinite}
-    .pill[data-s=err] .pi::before{content:"!";color:#c0392b}
-    .pill[data-s=ok] .pi::before{content:"✓";color:#17825D}
-    .pn{color:#667085}.pill[data-s=err] .pn{color:#c0392b}.pill[data-s=ok] .pn{color:#17825D}
-    .pg{position:absolute;left:0;bottom:0;height:2px;background:#1f2937;transition:width .3s}
-    .pd{border:0;background:none;color:#98a2b3;font-size:16px;line-height:1;cursor:pointer;padding:0 0 0 2px}.pd:hover{color:#17202a}.pd[hidden]{display:none}
-    @media (prefers-reduced-motion:reduce){.pill[data-s=run] .pi{animation:none}}
-    .panel{position:fixed;left:0;top:0;z-index:2147483647;width:380px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
+    .panel{position:relative;width:380px;max-height:80vh;overflow:auto;background:#fff;color:#17202a;
       border:1px solid #d9dee6;border-radius:12px;box-shadow:0 14px 40px rgba(20,30,50,.22);font-size:14px}
     .panel[hidden]{display:none}
     header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #e6e9ef;background:#f3f5f8;border-radius:12px 12px 0 0}
@@ -821,48 +788,25 @@
   `;
 
   /* ───────────── Separador (item no balão + pílula + painel) ───────────── */
-  const itemHost = document.createElement('div');
-  itemHost.id = 'carcad-item';
-  itemHost.slot = 'item';
-  itemHost.style.order = '3';
-  dock.appendChild(itemHost);
-  const itemRoot = itemHost.attachShadow({ mode: 'open' });
-  itemRoot.innerHTML = `<style>
-    :host{all:initial;display:block}
-    *{box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
-    .item{display:flex;align-items:center;gap:10px;width:calc(100% - 8px);margin:2px 4px;padding:9px 10px;border:0;border-radius:8px;background:none;cursor:pointer;
-      font-size:13px;color:#17202a;text-align:left}
-    .item:hover{background:#f2f4f7}
-    .item:focus-visible{outline:2px solid #9ca3af}
-    .dot{width:7px;height:7px;border-radius:50%;background:#c5ccd8;flex:none}
-    .item[data-s=ok] .dot{background:#17825D}.item[data-s=err] .dot{background:#c0392b}
-    .nm{flex:1;font-weight:600}
-    small{font-size:11px;color:#98a2b3}
-    svg{color:#98a2b3;flex:none}
-  </style>
-    <button class="item" title="CARCAD_O v${VERSAO}"><span class="dot"></span><span class="nm">CARCAD_O</span><small>v${VERSAO}</small>
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2l5 5-5 5"/></svg></button>`;
-  const itemBtn = itemRoot.querySelector('.item');
-
   const host = document.createElement('div');
   host.id = 'carcad-host';
-  host.slot = 'pill';
-  dock.appendChild(host);
+  host.dataset.ndPainel = ND_ID;   // o Dock adota este host e posiciona o painel
+  host.style.display = 'none';
+  document.documentElement.appendChild(host);
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
-    <div class="pill" role="button" tabindex="0" hidden><span class="pi"></span><span>CARCAD_O</span><span class="pn"></span><button class="pd" title="Dispensar" aria-label="Dispensar" hidden>×</button><span class="pg"></span></div>
-    <section class="panel" hidden>
+    <section class="panel">
       <header><strong>CARCAD_O</strong><span class="sub">Nemesis · v${VERSAO}</span>
         <button class="x gear" id="gear" title="Definições" aria-label="Definições">⚙</button>
         <button class="x" id="close" aria-label="Fechar">×</button></header>
       <div class="body"></div>
     </section>`;
   const $ = (sel, el = root) => el.querySelector(sel);
-  const pill = $('.pill'), pillN = $('.pn'), pillG = $('.pg'), pillD = $('.pd'), closeBtn = $('#close');
-  const panel = $('.panel'), body = $('.body');
+  const closeBtn = $('#close');
+  const body = $('.body');
 
-  // Estado da pílula + ponto no balão + sinalizações na barra (a executar / painel aberto)
-  function syncPill(s, rel) {
+  // Estado enviado ao Dock (ponto no balão, pílula) + rótulo do botão do painel
+  function syncPill(s, rel, naLista) {
     let st = '', txt = '', pct = 0, tip = `CARCAD_O v${VERSAO}`, dispensada = false;
     if (pendingConfirm) st = 'run';
     else if (s) st = s.erro ? 'err' : 'run';
@@ -879,63 +823,28 @@
       tip += ` · relatório: ${ok} de ${rel.fila.length} ok`;
       dispensada = localStorage.getItem('nemesis_dispensado_carcad') === String(rel.ts);
     }
-    itemBtn.dataset.s = st;
-    pill.dataset.s = st;
-    if (st === 'run') { if (dock.dataset.run !== 'carcad') dock.dataset.run = 'carcad'; }
-    else if (dock.dataset.run === 'carcad') delete dock.dataset.run;
-    const outro = !!dock.dataset.run && dock.dataset.run !== 'carcad';   // enquanto outro script executa, só ele aparece
-    pill.hidden = !st || outro || dispensada;
-    pillD.hidden = !(st === 'ok' || (st === 'err' && !!rel));
-    pillN.textContent = txt;
-    pillG.style.width = pct + '%';
-    pill.title = tip;
     closeBtn.textContent = st ? '–' : '×';
     closeBtn.title = closeBtn.ariaLabel = st ? 'Minimizar' : 'Fechar';
-    if (aberto) { if (dock.dataset.panel !== 'carcad') dock.dataset.panel = 'carcad'; }
-    else if (dock.dataset.panel === 'carcad') delete dock.dataset.panel;
+    nd('estado', { id: ND_ID, naLista, estado: st, pilula: !!st && !dispensada, contador: txt, progresso: pct, dica: tip,
+      dispensavel: st === 'ok' || (st === 'err' && !!rel) });
   }
 
-  let aberto = !!load() || (isTarefas && !configurado());
+  const abrirNoArranque = !!load() || (isTarefas && !configurado());
   let emConfig = !configurado();
   let lastView = null, lastKey = '';
   let pendingConfirm = null;
   const draft = { lista: '', tipos: {}, antigo: {} };
 
-  // Só um painel aberto de cada vez: quem abre anuncia na barra e os outros scripts fecham o seu
-  const anunciar = () => { dock.dataset.open = 'carcad:' + Date.now(); };
-  const setAberto = (v) => { aberto = v; if (v) anunciar(); render(); };
-  if (aberto) anunciar();
+  // Abrir/fechar o painel é pedido ao Dock (ele garante que só há um painel aberto de cada vez)
+  const setAberto = (v) => { nd(v ? 'abrir' : 'fechar', { id: ND_ID }); render(); };
+  nd('registar', { id: ND_ID, nome: ND_NOME, versao: VERSAO, ordem: ND_ORDEM });
+  if (abrirNoArranque) nd('abrir', { id: ND_ID });
 
-  // O painel abre por cima do separador (ou por baixo, se não houver espaço)
-  function placePanel() {
-    if (panel.hidden) return;
-    const r = dock.getBoundingClientRect();
-    const pw = panel.offsetWidth, ph = panel.offsetHeight;
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const left = clamp(r.right - pw, 8, Math.max(8, vw - pw - 8));
-    let top = r.top - ph - 8;
-    if (top < 8) top = r.bottom + 8;
-    top = clamp(top, 8, Math.max(8, vh - ph - 8));
-    panel.style.left = left + 'px';
-    panel.style.top = top + 'px';
-  }
-
-  itemBtn.addEventListener('click', (e) => { e.currentTarget.blur(); setAberto(!aberto); });
-  pill.addEventListener('click', () => setAberto(!aberto));
-  pill.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAberto(!aberto); } });
-  pillD.addEventListener('click', (e) => {
-    e.stopPropagation();
+  host.addEventListener('nemesis-dock:dispensar', () => {
     const rel = lerRelatorio();
     if (rel) { try { localStorage.setItem('nemesis_dispensado_carcad', String(rel.ts)); } catch (_) { /* ignorar */ } }
     render();
   });
-  window.addEventListener('resize', placePanel);
-  // Reposiciona o painel quando a barra se mexe e fecha-o se outro script abriu o dele
-  new MutationObserver((recs) => {
-    if (recs.some((r) => r.attributeName === 'data-run')) { render(); return; }
-    const quem = (dock.dataset.open || '').split(':')[0];
-    if (aberto && quem && quem !== 'carcad') { aberto = false; render(); } else placePanel();
-  }).observe(dock, { attributes: true, attributeFilter: ['style', 'data-open', 'data-run'], subtree: true });
 
   $('#close').addEventListener('click', () => setAberto(false));
   $('#gear').addEventListener('click', () => { emConfig = !emConfig; lastKey = ''; render(); });
@@ -947,17 +856,14 @@
 
   function render() {
     renderInner();
-    placePanel();
   }
 
   function renderInner() {
     const s = load();
     const rel = s ? null : lerRelatorio();
-    itemHost.style.display = (isTarefas || s || rel) ? '' : 'none';
-    dockSync();
-    panel.hidden = !aberto;
+    const naLista = !!(isTarefas || s || rel);
     const v = pendingConfirm ? 'confirm' : emConfig ? 'config' : s ? (s.erro ? 'erro' : 'run') : rel ? 'done' : 'form';
-    syncPill(s, rel);
+    syncPill(s, rel, naLista);
     if ((v === 'form' || v === 'config') && lastView === v) return;
     const key = v + (s ? `${s.idx}|${s.prog}|${s.nota}|${s.erro || ''}` : rel ? 'r' + rel.ts : '');
     if (key === lastKey) return;
@@ -1053,7 +959,6 @@
       li.textContent = `${i.hora} · ${i.ordem} · ${TIPOS[i.tipo] || i.tipo || ''} · ${i.tarefa}`;
       hl.appendChild(li);
     });
-    $('#hist').addEventListener('toggle', placePanel);
 
     const refreshInfo = () => {
       const { validas, dup } = parseLista(lista.value);
@@ -1070,7 +975,6 @@
       info.textContent = partes.join(' · ');
       go.disabled = !n || sem > 0;
       go.textContent = n > 1 ? `Iniciar (${n} ordens)` : 'Iniciar';
-      placePanel();
     };
 
     // "Select all": checkbox no cabeçalho da lista, alinhada com as checkboxes "Contrato antigo" das linhas
