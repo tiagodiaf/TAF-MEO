@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis CARCAD_O
 // @namespace    tiago.nemesis.carcad
-// @version      2.1
+// @version      2.2
 // @description  Lista de ordens ORAC/ORAP/Esclarecimentos em lote: pesquisa, orçamento, recolha (contrato novo ou antigo), resposta, relatório e histórico
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -17,7 +17,7 @@
   'use strict';
 
   // ▼ VERSÃO — muda só aqui (e na linha // @version do cabeçalho, que o Tampermonkey não deixa usar variáveis) ▼
-  const VERSAO = '2.1';
+  const VERSAO = '2.2';
   if (window.top !== window.self) return;
 
   /* ───────────── Configuração global ───────────── */
