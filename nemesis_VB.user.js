@@ -23,7 +23,7 @@
   /* ───────────── Configuração global (igual para todos) ───────────── */
   const CFG = {
     tarefas: { ORAP: 'PJ0203', ORAC: 'PJ0201' },
-    tarefaEsclarecimentos: 'PJ0902',  // Esclarecimentos diversos (substitui a tarefa ORAP/ORAC quando a checkbox está marcada)
+    tarefaEsclarecimentos: 'PJ0902P',  // Esclarecimentos diversos (substitui a tarefa ORAP/ORAC quando a checkbox está marcada)
     respostaValor: '2569',            // "Projeto elaborado (O)"
     descricaoOrcamento: 'Orçamento',
     obsMax: 200,
