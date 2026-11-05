@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nemesis VB – Viabilidade
 // @namespace    tiago.nemesis.vb
-// @version      2.1
+// @version      2.2
 // @description  Automatiza o fluxo de viabilidade (ORAP/ORAC): pesquisa, orçamento, recolha e resposta final
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
@@ -17,7 +17,7 @@
   'use strict';
 
   // ▼ VERSÃO — muda só aqui (e na linha // @version do cabeçalho, que o Tampermonkey não deixa usar variáveis) ▼
-  const VERSAO = '2.1';
+  const VERSAO = '2.2';
   if (window.top !== window.self) return;
 
   /* ───────────── Configuração global (igual para todos) ───────────── */
