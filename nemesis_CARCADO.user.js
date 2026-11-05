@@ -24,7 +24,7 @@
   const CFG = {
     // Tarefa por tipo e por contrato (ESC = Esclarecimentos diversos)
     tarefas: {
-      novo: { ORAC: 'PJ0210', ORAP: 'PJ0211', ESC: 'PJ0902' },
+      novo: { ORAC: 'PJ0210', ORAP: 'PJ0211', ESC: 'PJ0902P' },
       antigo: { ORAC: 'P0127', ORAP: 'P0127', ESC: 'P0136' },
     },
     respostaValor: '2569',            // "Projeto elaborado (O)" (igual ao VB)
