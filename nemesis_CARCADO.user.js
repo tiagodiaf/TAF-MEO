@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Nemesis CARCAD_O
 // @namespace    tiago.nemesis.carcad
-// @version      2.2
-// @description  Lista de ordens ORAC/ORAP/Esclarecimentos em lote: pesquisa, orçamento, recolha (contrato novo ou antigo), resposta, relatório e histórico
+// @version      2.3
+// @description  Lista de ordens ORAC/ORAP/Esclarecimentos em lote: pesquisa, orçamento, recolha (contrato novo ou antigo), resposta, relatório e histórico. Opção "Sem tarefas": só abre a ordem e responde.
 // @match        https://nemesis.telecom.pt/*
 // @run-at       document-idle
 // @noframes
@@ -17,7 +17,7 @@
   'use strict';
 
   // ▼ VERSÃO — muda só aqui (e na linha // @version do cabeçalho, que o Tampermonkey não deixa usar variáveis) ▼
-  const VERSAO = '2.2';
+  const VERSAO = '2.3';
   if (window.top !== window.self) return;
 
   /* ───────────── Configuração global ───────────── */
@@ -372,9 +372,15 @@
   }
 
   // Detalhe da ordem: guarda o OrdemId e abre a lista de orçamentos
+  // (com "Sem tarefas": salta orçamento e recolha e responde logo aqui)
   async function passoDetalhe(s) {
     const id = new URLSearchParams(location.search).get('OrdemId');
     if (!id) throw new Error('Não encontrei o OrdemId no endereço do detalhe.');
+    if (s.semTarefas) {
+      patch({ ordemId: id, step: 'resposta', prog: 4, nota: 'Sem tarefas: a abrir a resposta…' });
+      await passoResposta(load());
+      return;
+    }
     patch({ ordemId: id, step: 'lista', prog: 1, nota: 'A abrir a lista de orçamentos…' });
     location.href = urlLista(id);
   }
@@ -504,7 +510,16 @@
 
     // Confirmação manual (opcional)
     if (s.confirmar !== false) {
-      const ok = await confirmar({ Ordem: `${s.ordem} (${s.idx + 1} de ${s.fila.length})`, Tipo: TIPOS[s.tipo], Tarefa: s.tarefa, Resposta: respostaTxt });
+      const resumo = { Ordem: `${s.ordem} (${s.idx + 1} de ${s.fila.length})` };
+      if (s.semTarefas) {
+        if (s.tipo) resumo.Tipo = TIPOS[s.tipo] || s.tipo;
+        resumo.Modo = 'Sem tarefas (só resposta)';
+      } else {
+        resumo.Tipo = TIPOS[s.tipo];
+        resumo.Tarefa = s.tarefa;
+      }
+      resumo.Resposta = respostaTxt;
+      const ok = await confirmar(resumo);
       if (!ok) { finalizar('Cancelaste a confirmação antes de enviar a resposta.'); return; }
     }
 
@@ -646,7 +661,8 @@
 
   function continuarDepois() {
     const s = load(); if (!s) return;
-    const next = NEXT[s.step];
+    // Sem tarefas: depois do detalhe vem logo a resposta (não há lista nem recolha)
+    const next = (s.semTarefas && s.step === 'detalhe') ? 'resposta' : NEXT[s.step];
     if (!next) { patch({ erro: null }); run(); return; }
     patch({ erro: null, step: next, prog: PROG[next] ?? s.prog, nota: 'A continuar (passo anterior feito à mão)…' });
     const id = s.ordemId;
@@ -737,6 +753,7 @@
     .mono{font-family:Consolas,"Courier New",monospace;letter-spacing:.3px}
     .info{min-height:20px;margin-top:6px;font-size:13px;color:#667085}.info.ok{color:#17825D;font-weight:600}.info.bad{color:#b26a00}
     .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;color:#17202a}
+    .chk + .chk{margin-top:8px}
     .chk input{width:16px;height:16px;cursor:pointer}
     .btn{width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid #c5ccd8;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
     .btn.primary{background:var(--c);border-color:var(--c);color:#fff}.btn.primary:disabled{background:var(--cd);border-color:var(--cd);cursor:not-allowed}
@@ -748,6 +765,7 @@
     .steps li:not(:last-child)::after{content:"";position:absolute;left:8px;top:26px;height:calc(100% - 12px);border-left:2px solid #e1e5ec}
     .steps i{width:18px;height:18px;border-radius:50%;border:2px solid #c5ccd8;background:#fff;flex:none;z-index:1}
     .steps li.done{color:#17202a}.steps li.done i{background:#17825D;border-color:#17825D;box-shadow:inset 0 0 0 3px #fff;}
+    .steps li.skip{color:#98a2b3;text-decoration:line-through}.steps li.skip i{background:#e1e5ec;border-color:#e1e5ec}
     .steps li.cur{color:#17202a;font-weight:600}.steps li.cur i{border-color:var(--c);border-top-color:transparent;animation:g 1s linear infinite}
     @keyframes g{to{transform:rotate(360deg)}}
     @media (prefers-reduced-motion:reduce){.steps li.cur i{animation:none;border-top-color:var(--c)}}
@@ -774,6 +792,7 @@
     .ord .tar{font-family:Consolas,"Courier New",monospace;font-size:12px;font-weight:600;color:var(--ch);text-align:right}
     .old{display:flex;align-items:center;gap:4px;font-size:12px;color:#475467;cursor:pointer;user-select:none;white-space:nowrap}
     .old input{width:14px;height:14px;cursor:pointer;margin:0}
+    .old.off{opacity:.4;cursor:default}.old.off input{cursor:default}
     .ord .seg{grid-column:1/-1}
     .ord.head{position:sticky;top:0;background:#f3f5f8;z-index:2;padding-top:5px;padding-bottom:5px}
     .seg{display:flex;gap:4px;flex:none}
@@ -833,7 +852,8 @@
   let emConfig = !configurado();
   let lastView = null, lastKey = '';
   let pendingConfirm = null;
-  const draft = { lista: '', tipos: {}, antigo: {} };
+  // semTarefas: começa sempre desligado (não é guardado entre sessões)
+  const draft = { lista: '', tipos: {}, antigo: {}, semTarefas: false };
 
   // Abrir/fechar o painel é pedido ao Dock (ele garante que só há um painel aberto de cada vez)
   const setAberto = (v) => { nd(v ? 'abrir' : 'fechar', { id: ND_ID }); render(); };
@@ -940,15 +960,18 @@
       </div>
       <ul class="ords" id="ords" hidden></ul>
       <div class="info" id="info"></div>
+      <label class="chk"><input type="checkbox" id="semtar"><span>Sem tarefas (só abrir a ordem e submeter a resposta)</span></label>
       <label class="chk"><input type="checkbox" id="pedir"><span>Confirmar antes de enviar cada resposta</span></label>
       <button class="btn primary" id="go" disabled>Iniciar</button>
       <details class="hist" id="hist"><summary>Hoje: <span id="hn">0</span> concluída(s)</summary><ul id="hl"></ul></details>
     </div>`));
     $('#quem').textContent = `Brigada ${u.brigada} · Mec. ${u.nmec}`;
-    const lista = $('#lista'), info = $('#info'), go = $('#go'), pedir = $('#pedir'), ords = $('#ords'), bulk = $('#bulk');
+    const lista = $('#lista'), info = $('#info'), go = $('#go'), pedir = $('#pedir'), ords = $('#ords'), bulk = $('#bulk'), semtar = $('#semtar');
     lista.value = draft.lista;
     pedir.checked = GM_getValue('confirmarAntes', true) !== false;
     pedir.addEventListener('change', () => GM_setValue('confirmarAntes', pedir.checked));
+    semtar.checked = !!draft.semTarefas;
+    semtar.addEventListener('change', () => { draft.semTarefas = semtar.checked; renderLinhas(); });
 
     // Histórico do dia (mais recentes primeiro)
     const itens = histLoad().itens;
@@ -956,7 +979,7 @@
     const hl = $('#hl');
     [...itens].reverse().forEach((i) => {
       const li = document.createElement('li');
-      li.textContent = `${i.hora} · ${i.ordem} · ${TIPOS[i.tipo] || i.tipo || ''} · ${i.tarefa}`;
+      li.textContent = [i.hora, i.ordem, TIPOS[i.tipo] || i.tipo || '', i.tarefa || (i.tipo ? '' : 'sem tarefas')].filter(Boolean).join(' · ');
       hl.appendChild(li);
     });
 
@@ -965,9 +988,10 @@
       const n = validas.length;
       const cont = { ORAC: 0, ORAP: 0, ESC: 0 };
       let sem = 0;
-      validas.forEach((o) => { const t = draft.tipos[o.toUpperCase()]; if (cont[t] !== undefined) cont[t]++; else sem++; });
+      validas.forEach((o) => { const t = draft.tipos[o.toUpperCase()]; if (cont[t] !== undefined) cont[t]++; else if (!draft.semTarefas) sem++; });
       const partes = [];
       if (n) partes.push(`${n} ${n === 1 ? 'ordem' : 'ordens'}`);
+      if (draft.semTarefas && n) partes.push('sem tarefas');
       Object.keys(TIPOS).forEach((t) => { if (cont[t]) partes.push(`${cont[t]} ${TIPOS[t]}`); });
       if (sem) partes.push(`${sem} sem tipo`);
       if (dup) partes.push(`${dup} repetida${dup === 1 ? '' : 's'} ignorada${dup === 1 ? '' : 's'}`);
@@ -987,11 +1011,12 @@
 
     const renderLinhas = () => {
       const { validas } = parseLista(lista.value);
+      const st = !!draft.semTarefas;   // sem tarefas: tipo opcional e contrato antigo não se aplica
       bulk.hidden = !validas.length;
       ords.hidden = !validas.length;
       ords.replaceChildren();
       if (validas.length) {
-        const head = el(`<li class="ord head"><span class="o"></span><span class="tar"></span><label class="old"><input type="checkbox"><span>Select all</span></label></li>`);
+        const head = el(`<li class="ord head"><span class="o"></span><span class="tar"></span><label class="old${st ? ' off' : ''}"><input type="checkbox"${st ? ' disabled' : ''}><span>Select all</span></label></li>`);
         selAll = head.querySelector('input');
         selAll.addEventListener('change', () => {
           const v = selAll.checked;
@@ -1002,15 +1027,15 @@
       }
       validas.forEach((o, i) => {
         const k = o.toUpperCase();
-        const li = el(`<li class="ord"><span class="o"></span><span class="tar"></span><label class="old"><input type="checkbox"><span>Contrato antigo</span></label><span class="seg">${Object.keys(TIPOS).map((t) => `<label class="chip"><input type="radio" name="t${i}" value="${t}"><span>${TIPOS[t]}</span></label>`).join('')}</span></li>`);
+        const li = el(`<li class="ord"><span class="o"></span><span class="tar"></span><label class="old${st ? ' off' : ''}"><input type="checkbox"${st ? ' disabled' : ''}><span>Contrato antigo</span></label><span class="seg">${Object.keys(TIPOS).map((t) => `<label class="chip"><input type="radio" name="t${i}" value="${t}"><span>${TIPOS[t]}</span></label>`).join('')}</span></li>`);
         li.querySelector('.o').textContent = o;
         const tar = li.querySelector('.tar');
         const cb = li.querySelector('.old input');
         const mostraTarefa = () => {
           const t = draft.tipos[k];
-          tar.textContent = t ? tarefaDe(t, !!draft.antigo[k]) : '';
+          tar.textContent = (t && !st) ? tarefaDe(t, !!draft.antigo[k]) : '';
         };
-        if (!draft.tipos[k]) li.classList.add('sem');
+        if (!draft.tipos[k] && !st) li.classList.add('sem');
         cb.checked = !!draft.antigo[k];
         cb.addEventListener('change', () => { draft.antigo[k] = cb.checked; mostraTarefa(); refreshAllOld(); });
         li.querySelectorAll('.chip input').forEach((r) => {
@@ -1034,14 +1059,20 @@
     go.addEventListener('click', () => {
       const { validas } = parseLista(lista.value);
       if (!validas.length) return;
-      if (!configurado()) { emConfig = true; lastKey = ''; render(); return; }
-      const fila = validas.map((o) => { const k = o.toUpperCase(); const t = draft.tipos[k]; return { ordem: o, tipo: t, tarefa: t ? tarefaDe(t, !!draft.antigo[k]) : undefined }; });
-      if (fila.some((f) => !f.tarefa)) return;
+      const st = !!draft.semTarefas;
+      // Sem tarefas não precisa de brigada nem nº mecânico
+      if (!st && !configurado()) { emConfig = true; lastKey = ''; render(); return; }
+      const fila = validas.map((o) => {
+        const k = o.toUpperCase();
+        const t = draft.tipos[k];
+        return st ? { ordem: o, tipo: t || '', tarefa: '' } : { ordem: o, tipo: t, tarefa: t ? tarefaDe(t, !!draft.antigo[k]) : undefined };
+      });
+      if (!st && fila.some((f) => !f.tarefa)) return;
       localStorage.removeItem(CFG.reportKey);
       const agora = Date.now();
       save({
         fila, idx: 0, res: [], ordem: fila[0].ordem, tipo: fila[0].tipo, tarefa: fila[0].tarefa,
-        confirmar: pedir.checked,
+        confirmar: pedir.checked, semTarefas: st,
         falhasSeguidas: 0, recargas: 0, inicio: agora, tOrdem: agora, step: 'pesquisa', prog: 0, nota: 'A iniciar…',
       });
       setAberto(true);
@@ -1053,7 +1084,10 @@
   function viewRun(s) {
     const total = s.fila.length, feitas = s.res.length;
     const ok = s.res.filter((r) => r.estado === 'ok').length;
-    const lis = PASSOS.map((t, i) => `<li class="${i < s.prog ? 'done' : i === s.prog ? 'cur' : ''}"><i></i><span>${t}</span></li>`).join('');
+    const lis = PASSOS.map((t, i) => {
+      if (s.semTarefas && i >= 1 && i <= 3) return `<li class="skip"><i></i><span>${t} (saltado)</span></li>`;
+      return `<li class="${i < s.prog ? 'done' : i === s.prog ? 'cur' : ''}"><i></i><span>${t}</span></li>`;
+    }).join('');
     body.append(el(`<div>
       <div class="ordem"><span class="mono" id="ro"></span><span class="tag" id="rt"></span></div>
       <div class="sum" id="rs"></div>
@@ -1063,7 +1097,9 @@
       <button class="btn ghost" id="stop">Parar e ver relatório</button>
     </div>`));
     $('#ro').textContent = s.ordem;
-    $('#rt').textContent = `${TIPOS[s.tipo] || ''} · ${s.tarefa}`;
+    $('#rt').textContent = s.semTarefas
+      ? [TIPOS[s.tipo] || s.tipo, 'sem tarefas'].filter(Boolean).join(' · ')
+      : `${TIPOS[s.tipo] || ''} · ${s.tarefa}`;
     $('#rs').textContent = `Ordem ${s.idx + 1} de ${total} · ${ok} ok · ${feitas - ok} com problemas`;
     $('.bar i').style.width = Math.round((feitas / total) * 100) + '%';
     $('.nota').textContent = s.nota || '';
@@ -1140,7 +1176,10 @@
       li.querySelector('.n').textContent = detalhe;
       ul.append(li);
     };
-    const tipoTxt = (x) => (x.tipo ? `${TIPOS[x.tipo] || x.tipo} · ${x.tarefa} — ` : '');
+    const tipoTxt = (x) => {
+      if (!x.tipo && !x.tarefa) return '';
+      return [TIPOS[x.tipo] || x.tipo, x.tarefa].filter(Boolean).join(' · ') + ' — ';
+    };
     res.forEach((r) => add(r.ordem, r.estado, tipoTxt(r) + (r.estado === 'ok' ? (r.nota || '') : `${r.passo ? r.passo + ': ' : ''}${r.nota || ''}`)));
     pend.forEach((f) => add(f.ordem, 'pend', tipoTxt(f) + 'Não chegou a ser processada.'));
     $('#copy').addEventListener('click', async (e) => {
@@ -1151,7 +1190,7 @@
       btn.textContent = (await copiar(linhas.join('\n'))) ? 'Copiado ✓' : 'Não consegui copiar';
       setTimeout(() => { btn.textContent = 'Copiar relatório'; }, 2000);
     });
-    $('#nova').addEventListener('click', () => { localStorage.removeItem(CFG.reportKey); lastView = null; lastKey = ''; draft.lista = ''; draft.tipos = {}; draft.antigo = {}; render(); });
+    $('#nova').addEventListener('click', () => { localStorage.removeItem(CFG.reportKey); lastView = null; lastKey = ''; draft.lista = ''; draft.tipos = {}; draft.antigo = {}; draft.semTarefas = false; render(); });
   }
 
   render();
